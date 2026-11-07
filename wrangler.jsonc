@@ -3,9 +3,10 @@
   "name": "calendar",
   "compatibility_date": "2026-11-01",
   "pages_build_output_dir": "./frontend/dist",
+  "build": {
+    "command": "cd frontend && npm install && npm run build"
+  },
   "assets": {
-    "directory": "./frontend/dist",
-    "binding": "ASSETS",
-    "not_found_handling": "single-page-application"
+    "directory": "./frontend/dist"
   }
 }
