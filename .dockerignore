@@ -1,0 +1,8 @@
+.git
+.idea
+.DS_Store
+frontend/node_modules
+frontend/.expo
+backend/.gradle
+backend/build
+cloudflared
