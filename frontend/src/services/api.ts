@@ -9,14 +9,10 @@ const getApiBaseUrl = () => {
     if (window.location.port === '8082') {
       return 'http://localhost:8080/api/v1';
     }
-    // Cloudflare Pages (*.pages.dev) 등 정적 호스팅 도메인일 경우 백엔드 터널 URL로 호출
-    if (window.location.hostname.endsWith('pages.dev') || window.location.hostname.includes('workers.dev')) {
-      return 'https://antonio-silver-last-steel.trycloudflare.com/api/v1';
-    }
-    // 통합 PWA 서버 또는 배포 도메인에서는 상대 경로 사용 (동일 도메인 프록시)
+    // Cloudflare Pages 올인원 배포 및 통합 서버에서는 자체 Functions 상대 경로 사용
     return '/api/v1';
   }
-  return 'https://antonio-silver-last-steel.trycloudflare.com/api/v1';
+  return '/api/v1';
 };
 
 const API_BASE_URL = getApiBaseUrl();
