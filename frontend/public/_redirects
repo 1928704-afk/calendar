@@ -1,3 +1,0 @@
-# Cloudflare Pages 라우팅 및 백엔드 프록시 설정
-/api/* https://antonio-silver-last-steel.trycloudflare.com/api/:splat 200
-/* /index.html 200
