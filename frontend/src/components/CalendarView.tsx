@@ -50,17 +50,12 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
   const month = currentDate.getMonth(); // 0-indexed
 
   // 기간 일정 (2일 이상 지속되는 일정, 예: 11월 대집회)
-  // 전체 부서 보기(isAllDept)일 때는 부서별 막대 대신 전체 막대 1개만 노출
+  // 동일 제목 & 동일 기간인 집회/기간 일정은 언제나 딱 1개만 단일화하여 노출
   const multiDaySchedules = useMemo(() => {
     const list = schedules.filter(
       (s) => s.endDate && s.endDate > s.scheduleDate
     );
 
-    if (!isAllDept) {
-      return list;
-    }
-
-    // 전체 부서 보기일 경우 동일 제목 & 동일 기간인 집회/기간 일정을 1개로 단일화
     const uniqueMap = new Map<string, Schedule>();
     for (const item of list) {
       const key = `${item.title.trim()}-${item.scheduleDate}-${item.endDate}`;
@@ -69,7 +64,7 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
       }
     }
     return Array.from(uniqueMap.values());
-  }, [schedules, isAllDept]);
+  }, [schedules]);
 
   // 단일 일자별 전체 일정 매핑 (상세 모달용: 기간 일정 + 단일 일정 모두 포함)
   const allSchedulesByDate = useMemo(() => {
@@ -84,7 +79,7 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
         while (cur <= end) {
           const ds = cur.toISOString().split('T')[0];
           const list = map.get(ds) || [];
-          if (!list.some((item) => item.id === schedule.id)) {
+          if (!list.some((item) => item.id === schedule.id || (item.title.trim() === schedule.title.trim() && item.scheduleDate === schedule.scheduleDate))) {
             list.push(schedule);
           }
           map.set(ds, list);
