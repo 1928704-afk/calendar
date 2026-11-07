@@ -3,6 +3,9 @@
   "name": "calendar",
   "main": "./worker.ts",
   "compatibility_date": "2026-11-01",
+  "build": {
+    "command": "cd frontend && npm install && npm run build"
+  },
   "assets": {
     "directory": "./frontend/dist",
     "binding": "ASSETS"
