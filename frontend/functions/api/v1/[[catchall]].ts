@@ -252,7 +252,7 @@ export const onRequest: PagesFunction<Env> = async (context) => {
         const params: any[] = [`${prefix}%`, `${prefix}%`];
 
         if (departmentId > 0) {
-          query += ` AND s.department_id = ?`;
+          query += ` AND (s.department_id = ? OR s.department_id = 0)`;
           params.push(departmentId);
         }
         query += ` ORDER BY s.schedule_date ASC, s.start_time ASC`;
@@ -361,7 +361,7 @@ export const onRequest: PagesFunction<Env> = async (context) => {
       `;
       const params: any[] = [];
       if (departmentId > 0) {
-        query += ` WHERE s.department_id = ?`;
+        query += ` WHERE (s.department_id = ? OR s.department_id = 0)`;
         params.push(departmentId);
       }
       query += ` ORDER BY s.schedule_date ASC, s.start_time ASC`;
@@ -395,7 +395,7 @@ export const onRequest: PagesFunction<Env> = async (context) => {
       `;
       const params: any[] = [`${prefix}%`, `${prefix}%`];
       if (departmentId > 0) {
-        query += ` AND s.department_id = ?`;
+        query += ` AND (s.department_id = ? OR s.department_id = 0)`;
         params.push(departmentId);
       }
       query += ` ORDER BY s.schedule_date ASC, s.start_time ASC`;
