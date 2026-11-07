@@ -125,6 +125,32 @@ async function ensureSchema(db: D1Database) {
       ('이레부', 3)
   `).run();
 
+  // 11월 대집회 (2026-11-23 ~ 2026-11-29) 기본 일정 자동 등록
+  const rallyCount: any = await db.prepare("SELECT COUNT(*) as cnt FROM schedules WHERE title LIKE '%대집회%'").first();
+  if (!rallyCount || rallyCount.cnt === 0) {
+    const kstNow = nowKST();
+    await db.batch([
+      db.prepare(`
+        INSERT INTO schedules (
+          department_id, category, title, author_name, target_name,
+          schedule_date, end_date, color, memo, created_by, updated_by, created_at, updated_at
+        ) VALUES (1, 'RALLY', '📢 11월 대집회', '교회', '전체 성도', '2026-11-23', '2026-11-29', '#E53E3E', '2026 하반기 말씀 대집회', '교회', '교회', ?, ?)
+      `).bind(kstNow, kstNow),
+      db.prepare(`
+        INSERT INTO schedules (
+          department_id, category, title, author_name, target_name,
+          schedule_date, end_date, color, memo, created_by, updated_by, created_at, updated_at
+        ) VALUES (2, 'RALLY', '📢 11월 대집회', '교회', '전체 성도', '2026-11-23', '2026-11-29', '#E53E3E', '2026 하반기 말씀 대집회', '교회', '교회', ?, ?)
+      `).bind(kstNow, kstNow),
+      db.prepare(`
+        INSERT INTO schedules (
+          department_id, category, title, author_name, target_name,
+          schedule_date, end_date, color, memo, created_by, updated_by, created_at, updated_at
+        ) VALUES (3, 'RALLY', '📢 11월 대집회', '교회', '전체 성도', '2026-11-23', '2026-11-29', '#E53E3E', '2026 하반기 말씀 대집회', '교회', '교회', ?, ?)
+      `).bind(kstNow, kstNow),
+    ]);
+  }
+
   schemaInitialized = true;
 }
 
