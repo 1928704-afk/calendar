@@ -124,6 +124,28 @@ export default function App() {
   const [notificationModalVisible, setNotificationModalVisible] = useState<boolean>(false);
   const [toastNotification, setToastNotification] = useState<NotificationItem | null>(null);
 
+  // 안드로이드 및 모든 모바일 브라우저에서 일관된 Pretendard 폰트 강제 주입
+  useEffect(() => {
+    if (Platform.OS === 'web' && typeof document !== 'undefined') {
+      const styleId = 'global-pretendard-font-style';
+      if (!document.getElementById(styleId)) {
+        const style = document.createElement('style');
+        style.id = styleId;
+        style.textContent = `
+          *, *::before, *::after, [dir="auto"], [class*="css-text-"], [class*="r-fontFamily-"] {
+            font-family: "Pretendard Variable", "Pretendard", -apple-system, BlinkMacSystemFont, system-ui, Roboto, "Helvetica Neue", "Segoe UI", "Apple SD Gothic Neo", "Noto Sans KR", "Malgun Gothic", sans-serif !important;
+            -webkit-font-smoothing: antialiased !important;
+            -moz-osx-font-smoothing: grayscale !important;
+            letter-spacing: -0.015em;
+            word-break: keep-all;
+            overflow-wrap: break-word;
+          }
+        `;
+        document.head.appendChild(style);
+      }
+    }
+  }, []);
+
   // 1. 초기 부서 목록 및 기도명단 로드
   useEffect(() => {
     fetchDepartments();
