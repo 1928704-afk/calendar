@@ -144,14 +144,39 @@ export default function App() {
     }
   };
 
-  // 기도명단 로드 (API -> 실패 시 로컬 167건 PRAYER_TARGETS fallback)
+  // 기도명단 로드 (서버 데이터와 기본 167건 명단을 스마트 병합하여 명단 유실 원천 차단)
   const loadPrayers = async () => {
     try {
       setLoadingPrayers(true);
-      const list = await api.getPrayers();
-      if (list && list.length > 0) {
-        setPrayers(list);
+      const serverList = await api.getPrayers();
+
+      // 1. 기본 167건 명단 맵 구성
+      const prayerMap = new Map<string, PrayerTargetItem>();
+      PRAYER_TARGETS.forEach((p) => {
+        const key = `${(p.department || '').trim()}_${(p.leader || '').trim()}_${(p.target || '').trim()}`;
+        prayerMap.set(key, { ...p });
+      });
+
+      // 2. 서버 데이터가 있으면 상태(isRally 등) 및 새 등록자 반영
+      if (serverList && Array.isArray(serverList) && serverList.length > 0) {
+        serverList.forEach((sp) => {
+          const key = `${(sp.department || '').trim()}_${(sp.leader || '').trim()}_${(sp.target || '').trim()}`;
+          const existing = prayerMap.get(key);
+          if (existing) {
+            prayerMap.set(key, {
+              ...existing,
+              id: sp.id || existing.id,
+              isRally: sp.isRally !== undefined ? sp.isRally : existing.isRally,
+              relationship: sp.relationship || existing.relationship,
+              age: sp.age || existing.age,
+            });
+          } else {
+            prayerMap.set(key, sp);
+          }
+        });
       }
+
+      setPrayers(Array.from(prayerMap.values()));
     } catch (err: any) {
       console.warn('기도명단 API 로드 실패, 기본 명단 유지:', err);
     } finally {

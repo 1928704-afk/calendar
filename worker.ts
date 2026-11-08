@@ -1,4 +1,5 @@
 // Cloudflare Full-Stack Worker (Frontend Static Assets + D1 Database API)
+import { PRAYER_TARGETS } from './frontend/src/data/prayerData';
 
 interface Env {
   DB: D1Database;
@@ -142,6 +143,45 @@ async function ensureSchema(db: D1Database) {
     await db.prepare("UPDATE schedules SET department_id = 0 WHERE id = ?").bind(firstId).run();
   } else if (list.length === 1) {
     await db.prepare("UPDATE schedules SET department_id = 0 WHERE id = ?").bind(list[0].id).run();
+  }
+
+  // 기본 기도 대상자 167건 동기화 및 영구 보존 (없는 대상자만 안전하게 추가)
+  try {
+    const existingPrayers: any = await db.prepare("SELECT department, leader, target FROM prayers").all();
+    const existingSet = new Set<string>();
+    for (const row of (existingPrayers.results || [])) {
+      existingSet.add(`${(row.department || '').trim()}_${(row.leader || '').trim()}_${(row.target || '').trim()}`);
+    }
+
+    const missingPrayers = PRAYER_TARGETS.filter(p => {
+      const key = `${(p.department || '').trim()}_${(p.leader || '').trim()}_${(p.target || '').trim()}`;
+      return !existingSet.has(key);
+    });
+
+    if (missingPrayers.length > 0) {
+      const batchStmts = missingPrayers.map(p =>
+        db.prepare(`
+          INSERT INTO prayers (department, leader, target, relationship, age, is_rally, created_at, updated_at)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        `).bind(
+          p.department,
+          p.leader,
+          p.target,
+          p.relationship || '',
+          p.age || '',
+          p.isRally ? 1 : 0,
+          kstNow,
+          kstNow
+        )
+      );
+
+      // Cloudflare D1 배치 실행 (50개 단위)
+      for (let i = 0; i < batchStmts.length; i += 50) {
+        await db.batch(batchStmts.slice(i, i + 50));
+      }
+    }
+  } catch (prayerSeedErr) {
+    console.error('기도 명단 시딩 중 오류 (계속 진행):', prayerSeedErr);
   }
 
   schemaInitialized = true;
