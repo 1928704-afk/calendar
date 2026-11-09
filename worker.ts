@@ -187,10 +187,14 @@ async function ensureSchema(db: D1Database) {
   schemaInitialized = true;
 }
 
-function nowKST() {
+function getKSTDate(): Date {
   const d = new Date();
   const utc = d.getTime() + d.getTimezoneOffset() * 60000;
-  const kst = new Date(utc + 9 * 3600000);
+  return new Date(utc + 9 * 3600000);
+}
+
+function nowKST() {
+  const kst = getKSTDate();
   return kst.toISOString().replace('T', ' ').substring(0, 19);
 }
 
@@ -260,7 +264,7 @@ async function handleApiRequest(request: Request, env: Env): Promise<Response> {
       if (method === 'GET') {
         const yearParam = url.searchParams.get('year');
         const monthParam = url.searchParams.get('month');
-        const now = new Date();
+        const now = getKSTDate();
         const year = yearParam ? Number(yearParam) : now.getFullYear();
         const month = monthParam ? Number(monthParam) : now.getMonth() + 1;
         const monthStr = month < 10 ? `0${month}` : `${month}`;
@@ -367,7 +371,7 @@ async function handleApiRequest(request: Request, env: Env): Promise<Response> {
     // 주간 타임라인
     const timelineMatch = path.match(/^\/api\/v1\/departments\/(\d+)\/schedules\/timeline$/);
     if (method === 'GET' && timelineMatch) {
-      const year = Number(url.searchParams.get('year') || new Date().getFullYear());
+      const year = Number(url.searchParams.get('year') || getKSTDate().getFullYear());
       const week = Number(url.searchParams.get('week') || 1);
       return ok({
         year,
@@ -382,7 +386,7 @@ async function handleApiRequest(request: Request, env: Env): Promise<Response> {
     const monthlyTimelineMatch = path.match(/^\/api\/v1\/departments\/(\d+)\/schedules\/monthly-timeline$/);
     if (method === 'GET' && monthlyTimelineMatch) {
       const departmentId = Number(monthlyTimelineMatch[1]);
-      const now = new Date();
+      const now = getKSTDate();
       const year = Number(url.searchParams.get('year') || now.getFullYear());
       const month = Number(url.searchParams.get('month') || now.getMonth() + 1);
       const monthStr = month < 10 ? `0${month}` : `${month}`;
@@ -432,7 +436,8 @@ async function handleApiRequest(request: Request, env: Env): Promise<Response> {
       });
 
       const days = Object.keys(dayMap).sort().map((dateStr) => {
-        const dObj = new Date(dateStr);
+        const [y, m, d] = dateStr.split('-').map(Number);
+        const dObj = new Date(y, m - 1, d);
         return {
           date: dateStr,
           dayOfWeek: dayNames[dObj.getDay()],

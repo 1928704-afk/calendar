@@ -19,6 +19,7 @@ import {
 } from '../constants/theme';
 import { api } from '../services/api';
 import { Comment, Department, PrayerTargetCreateRequest, PrayerTargetItem, Schedule, ScheduleCategory } from '../types';
+import { getTodayKSTString } from '../utils/dateUtils';
 import {
   CalendarIcon,
   MessageSquareIcon,
@@ -92,7 +93,7 @@ export const ScheduleFormModal: React.FC<ScheduleFormModalProps> = ({
   const [authorName, setAuthorName] = useState(currentUserName);
   const [targetName, setTargetName] = useState('');
   const [scheduleDate, setScheduleDate] = useState(
-    defaultDate || new Date().toISOString().split('T')[0]
+    defaultDate || getTodayKSTString()
   );
   const [memo, setMemo] = useState('');
   const [submitting, setSubmitting] = useState(false);
@@ -191,7 +192,7 @@ export const ScheduleFormModal: React.FC<ScheduleFormModalProps> = ({
       setColor('#D97706');
       setAuthorName(currentUserName);
       setTargetName('');
-      setScheduleDate(defaultDate || new Date().toISOString().split('T')[0]);
+      setScheduleDate(defaultDate || getTodayKSTString());
       setMemo('');
       setComments([]);
     }

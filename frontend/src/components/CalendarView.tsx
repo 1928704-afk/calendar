@@ -9,6 +9,7 @@ import {
 import { COLORS, SHADOWS } from '../constants/theme';
 import { Schedule } from '../types';
 import { ChevronLeftIcon, ChevronRightIcon, MegaphoneIcon } from './icons';
+import { buildDateString, formatDateToKSTString, getTodayKSTString } from '../utils/dateUtils';
 
 interface CalendarViewProps {
   currentDate: Date;
@@ -74,10 +75,12 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
       const eDate = schedule.endDate || schedule.scheduleDate;
 
       if (eDate > sDate) {
-        const cur = new Date(sDate);
-        const end = new Date(eDate);
+        const [sy, sm, sd] = sDate.split('-').map(Number);
+        const [ey, em, ed] = eDate.split('-').map(Number);
+        const cur = new Date(sy, sm - 1, sd);
+        const end = new Date(ey, em - 1, ed);
         while (cur <= end) {
-          const ds = cur.toISOString().split('T')[0];
+          const ds = formatDateToKSTString(cur);
           const list = map.get(ds) || [];
           if (!list.some((item) => item.id === schedule.id || (item.title.trim() === schedule.title.trim() && item.scheduleDate === schedule.scheduleDate))) {
             list.push(schedule);
@@ -119,13 +122,16 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
     const prevMonthLastDay = new Date(year, month, 0).getDate();
     const days: CalendarDayItem[] = [];
 
-    const todayStr = new Date().toISOString().split('T')[0];
+    const todayStr = getTodayKSTString();
+
+    // 이전 달 계산
+    const prevYear = month === 0 ? year - 1 : year;
+    const prevMonth = month === 0 ? 12 : month;
 
     // 이전 달 패딩
     for (let i = firstDayIndex - 1; i >= 0; i--) {
       const d = prevMonthLastDay - i;
-      const prevDate = new Date(year, month - 1, d);
-      const ds = prevDate.toISOString().split('T')[0];
+      const ds = buildDateString(prevYear, prevMonth, d);
       days.push({
         dateString: ds,
         dayNumber: d,
@@ -136,9 +142,7 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
 
     // 이번 달 날짜들
     for (let i = 1; i <= totalDays; i++) {
-      const mStr = String(month + 1).padStart(2, '0');
-      const dStr = String(i).padStart(2, '0');
-      const ds = `${year}-${mStr}-${dStr}`;
+      const ds = buildDateString(year, month + 1, i);
       days.push({
         dateString: ds,
         dayNumber: i,
@@ -147,12 +151,15 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
       });
     }
 
+    // 다음 달 계산
+    const nextYear = month === 11 ? year + 1 : year;
+    const nextMonth = month === 11 ? 1 : month + 2;
+
     // 다음 달 패딩 (7의 배수로 맞춤)
     const remaining = 7 - (days.length % 7);
     if (remaining < 7) {
       for (let i = 1; i <= remaining; i++) {
-        const nextDate = new Date(year, month + 1, i);
-        const ds = nextDate.toISOString().split('T')[0];
+        const ds = buildDateString(nextYear, nextMonth, i);
         days.push({
           dateString: ds,
           dayNumber: i,

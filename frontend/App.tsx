@@ -23,6 +23,7 @@ import { TimelineView } from './src/components/TimelineView';
 import { COLORS } from './src/constants/theme';
 import { PRAYER_TARGETS } from './src/data/prayerData';
 import { api } from './src/services/api';
+import { getKSTDate } from './src/utils/dateUtils';
 import {
   Department,
   MainTabType,
@@ -95,9 +96,9 @@ export default function App() {
   // 뷰 모드 ('calendar' | 'timeline')
   const [viewMode, setViewMode] = useState<'calendar' | 'timeline'>('calendar');
 
-  // 날짜/주차 상태
-  const [currentDate, setCurrentDate] = useState<Date>(new Date(2026, 10, 7)); // 2026년 11월 7일
-  const [currentYear, setCurrentYear] = useState<number>(2026);
+  // 날짜/주차 상태 (한국 시간 KST 기준)
+  const [currentDate, setCurrentDate] = useState<Date>(() => getKSTDate());
+  const [currentYear, setCurrentYear] = useState<number>(() => getKSTDate().getFullYear());
   const [currentWeek, setCurrentWeek] = useState<number>(45);
 
   // 캘린더 데이터 상태
@@ -367,11 +368,11 @@ export default function App() {
     setCurrentDate(newDate);
   };
 
-  // 오늘(초기 날짜)로 이동
+  // 오늘(한국 시간 KST 기준)로 이동
   const handleGoToday = () => {
-    setCurrentDate(new Date(2026, 10, 7));
-    setCurrentYear(2026);
-    setCurrentWeek(45);
+    const today = getKSTDate();
+    setCurrentDate(today);
+    setCurrentYear(today.getFullYear());
   };
 
   // 캘린더 날짜 탭 -> 해당 날짜 상세 모달
