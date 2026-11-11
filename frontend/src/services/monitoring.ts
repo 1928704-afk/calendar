@@ -6,17 +6,21 @@ const SENTRY_DSN = process.env.EXPO_PUBLIC_SENTRY_DSN || '';
 let isInitialized = false;
 
 // 자체 API 베이스 경로 결정 (api.ts와 동일 규칙)
-function getLogEndpoint(): string {
+function getApiRootUrl(): string {
   if (process.env.EXPO_PUBLIC_API_URL) {
-    return `${process.env.EXPO_PUBLIC_API_URL}/logs/error`;
+    return process.env.EXPO_PUBLIC_API_URL;
   }
   if (typeof window !== 'undefined' && window.location) {
     if (window.location.port === '8082') {
-      return 'http://localhost:8080/api/v1/logs/error';
+      return 'http://localhost:8080/api/v1';
     }
-    return '/api/v1/logs/error';
+    return '/api/v1';
   }
-  return '/api/v1/logs/error';
+  return '/api/v1';
+}
+
+function getLogEndpoint(): string {
+  return `${getApiRootUrl()}/logs/error`;
 }
 
 // 자체 Cloudflare Workers & D1 error_logs에 비동기 에러 리포팅
@@ -137,7 +141,77 @@ export function initMonitoring() {
         stack,
       });
     });
+
+    // 3. 실제 사용자 체감 속도(RUM / Web Vitals: TTFB, FCP, LCP, Page Load) 측정
+    collectWebVitals();
   }
+}
+
+function collectWebVitals() {
+  if (typeof window === 'undefined' || typeof performance === 'undefined') return;
+
+  let lcpValue: number | null = null;
+  let fcpValue: number | null = null;
+  let sent = false;
+
+  try {
+    if (typeof PerformanceObserver !== 'undefined') {
+      // LCP(최대 콘텐츠 렌더링 시간) 감지
+      const lcpObserver = new PerformanceObserver((list) => {
+        const entries = list.getEntries();
+        const last = entries[entries.length - 1];
+        if (last) {
+          lcpValue = Math.round(last.startTime);
+        }
+      });
+      lcpObserver.observe({ type: 'largest-contentful-paint', buffered: true });
+
+      // FCP(첫 화면 렌더링 시간) 감지
+      const fcpObserver = new PerformanceObserver((list) => {
+        for (const entry of list.getEntries()) {
+          if (entry.name === 'first-contentful-paint') {
+            fcpValue = Math.round(entry.startTime);
+          }
+        }
+      });
+      fcpObserver.observe({ type: 'paint', buffered: true });
+    }
+  } catch {
+    // 일부 구형 모바일 브라우저에서는 특정 entryType 미지원 시 무시
+  }
+
+  const sendMetrics = () => {
+    if (sent) return;
+    sent = true;
+
+    try {
+      const navEntries = performance.getEntriesByType('navigation') as PerformanceNavigationTiming[];
+      const nav = navEntries && navEntries[0];
+      const ttfbMs = nav ? Math.round(nav.responseStart - nav.requestStart) : null;
+      const loadMs = nav && nav.loadEventEnd > 0
+        ? Math.round(nav.loadEventEnd - nav.startTime)
+        : Math.round(performance.now());
+
+      fetch(`${getApiRootUrl()}/logs/perf`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        keepalive: true,
+        body: JSON.stringify({
+          ttfbMs: ttfbMs != null && ttfbMs >= 0 ? ttfbMs : null,
+          fcpMs: fcpValue,
+          lcpMs: lcpValue,
+          loadMs: loadMs > 0 ? loadMs : null,
+          url: window.location.href,
+          userAgent: navigator.userAgent,
+        }),
+      }).catch(() => {});
+    } catch {}
+  };
+
+  // 페이지 로드 완료 후 약 2.5초 뒤 측정 결과 전송
+  window.addEventListener('load', () => {
+    setTimeout(sendMetrics, 2500);
+  });
 }
 
 /**

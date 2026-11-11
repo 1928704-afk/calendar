@@ -1,9 +1,11 @@
 // Cloudflare Full-Stack Worker (Frontend Static Assets + D1 Database API)
 import { PRAYER_TARGETS } from './frontend/src/data/prayerData';
+import { renderMonitorDashboardHtml } from './monitorDashboard';
 
 interface Env {
   DB: D1Database;
   ASSETS: Fetcher;
+  ALERT_WEBHOOK_URL?: string;
 }
 
 function jsonResponse(data: any, status = 200) {
@@ -129,6 +131,19 @@ async function ensureSchema(db: D1Database) {
         created_at TEXT NOT NULL
       )
     `),
+    db.prepare(`
+      CREATE TABLE IF NOT EXISTS perf_logs (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        device_type TEXT NOT NULL,
+        user_agent TEXT,
+        ttfb_ms INTEGER,
+        fcp_ms INTEGER,
+        lcp_ms INTEGER,
+        load_ms INTEGER,
+        url TEXT,
+        created_at TEXT NOT NULL
+      )
+    `),
   ]);
 
   await db.prepare(`
@@ -212,7 +227,30 @@ function nowKST() {
   return kst.toISOString().replace('T', ' ').substring(0, 19);
 }
 
-async function handleApiRequest(request: Request, env: Env): Promise<Response> {
+// Discord / Slack 실시간 장애 알림 웹훅 발송 (비동기)
+function sendAlertWebhook(
+  env: Env,
+  ctx: ExecutionContext | undefined,
+  title: string,
+  detail: string
+) {
+  const webhookUrl = env.ALERT_WEBHOOK_URL;
+  if (!webhookUrl) return;
+
+  const text = `🚨 **[전도 캘린더 장애 감지]** (${nowKST()} KST)\n**${title}**\n\`\`\`\n${detail.slice(0, 1200)}\n\`\`\``;
+  const promise = fetch(webhookUrl, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    // Discord(content) & Slack(text) 모두 호환되도록 동시 포함
+    body: JSON.stringify({ content: text, text }),
+  }).catch(() => {});
+
+  if (ctx) {
+    ctx.waitUntil(promise);
+  }
+}
+
+async function handleApiRequest(request: Request, env: Env, ctx?: ExecutionContext): Promise<Response> {
   const url = new URL(request.url);
   const path = url.pathname.replace(/\/$/, '');
   const method = request.method.toUpperCase();
@@ -779,7 +817,34 @@ async function handleApiRequest(request: Request, env: Env): Promise<Response> {
       return ok(null, '모든 알림을 읽음 처리했습니다.');
     }
 
-    // 6. 실시간 버그/에러 모니터링 로그 수집 및 조회 (Observability)
+    // 6. 정밀 헬스 체크 API (UptimeRobot / 외부 감시용 - DB 쿼리 응답시간 측정 포함)
+    if (method === 'GET' && path === '/api/v1/health') {
+      const dbStart = Date.now();
+      const [schedRow, prayerRow, errRow]: any[] = await Promise.all([
+        env.DB.prepare('SELECT COUNT(*) as cnt FROM schedules').first(),
+        env.DB.prepare('SELECT COUNT(*) as cnt FROM prayers').first(),
+        env.DB.prepare('SELECT COUNT(*) as cnt FROM error_logs').first(),
+      ]);
+      const dbLatencyMs = Date.now() - dbStart;
+
+      return ok({
+        status: 'UP',
+        timestampKST: nowKST(),
+        database: {
+          status: 'CONNECTED',
+          latencyMs: dbLatencyMs,
+          schedulesCount: schedRow?.cnt || 0,
+          prayersCount: prayerRow?.cnt || 0,
+          errorLogsCount: errRow?.cnt || 0,
+        },
+        worker: {
+          runtime: 'Cloudflare Workers',
+          timezone: 'Asia/Seoul (KST)',
+        },
+      });
+    }
+
+    // 7. 실시간 버그/에러 모니터링 로그 수집, 조회 및 초기화
     if (path === '/api/v1/logs/error') {
       if (method === 'POST') {
         const body: any = await request.json().catch(() => ({}));
@@ -793,7 +858,6 @@ async function handleApiRequest(request: Request, env: Env): Promise<Response> {
         const logUser = body.userName ? String(body.userName).slice(0, 100) : '';
         const logExtra = body.extra ? JSON.stringify(body.extra).slice(0, 2000) : '';
 
-        // Cloudflare Observability Logs용 구조화 로그 출력
         console.error(JSON.stringify({
           event: 'client_error_reported',
           source: logSource,
@@ -808,22 +872,21 @@ async function handleApiRequest(request: Request, env: Env): Promise<Response> {
         await env.DB.prepare(`
           INSERT INTO error_logs (source, level, message, stack, url, user_agent, user_name, extra_json, created_at)
           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-        `).bind(
-          logSource,
-          logLevel,
-          logMessage,
-          logStack,
-          logUrl,
-          logUa,
-          logUser,
-          logExtra,
-          nowStr
-        ).run();
+        `).bind(logSource, logLevel, logMessage, logStack, logUrl, logUa, logUser, logExtra, nowStr).run();
 
-        // 최근 500건만 유지하여 D1 용량 최적화
         await env.DB.prepare(`
           DELETE FROM error_logs WHERE id NOT IN (SELECT id FROM error_logs ORDER BY id DESC LIMIT 500)
         `).run().catch(() => {});
+
+        // 치명적 에러/오류 시 Discord 또는 Slack 웹훅으로 즉시 알림 발송
+        if (logLevel === 'fatal' || logLevel === 'error' || logSource === 'MONITOR_TEST') {
+          sendAlertWebhook(
+            env,
+            ctx,
+            `[${logSource}/${logLevel.toUpperCase()}] ${logMessage}`,
+            `사용자: ${logUser || '비로그인'}\nURL: ${logUrl}\n기기: ${logUa}\n${logStack}`
+          );
+        }
 
         return ok({ recorded: true }, '에러 로그가 기록되었습니다.');
       }
@@ -835,6 +898,81 @@ async function handleApiRequest(request: Request, env: Env): Promise<Response> {
         `).bind(limit).all();
         return ok(results || []);
       }
+
+      if (method === 'DELETE') {
+        await env.DB.prepare('DELETE FROM error_logs').run();
+        return ok({ cleared: true }, '에러 로그가 초기화되었습니다.');
+      }
+    }
+
+    // 8. 웹 체감 속도(RUM / Web Vitals) 수집 및 조회
+    if (path === '/api/v1/logs/perf') {
+      if (method === 'POST') {
+        const body: any = await request.json().catch(() => ({}));
+        const nowStr = nowKST();
+        const ua = body.userAgent ? String(body.userAgent).slice(0, 500) : (request.headers.get('User-Agent') || '');
+        const deviceType = /iPhone|iPad|iPod/i.test(ua)
+          ? '🍎 iOS'
+          : (/Android/i.test(ua) ? '🤖 Android' : '💻 PC/Web');
+
+        await env.DB.prepare(`
+          INSERT INTO perf_logs (device_type, user_agent, ttfb_ms, fcp_ms, lcp_ms, load_ms, url, created_at)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        `).bind(
+          deviceType,
+          ua,
+          body.ttfbMs != null ? Math.round(Number(body.ttfbMs)) : null,
+          body.fcpMs != null ? Math.round(Number(body.fcpMs)) : null,
+          body.lcpMs != null ? Math.round(Number(body.lcpMs)) : null,
+          body.loadMs != null ? Math.round(Number(body.loadMs)) : null,
+          String(body.url || '').slice(0, 500),
+          nowStr
+        ).run();
+
+        // 최근 200건 유지
+        await env.DB.prepare(`
+          DELETE FROM perf_logs WHERE id NOT IN (SELECT id FROM perf_logs ORDER BY id DESC LIMIT 200)
+        `).run().catch(() => {});
+
+        return ok({ recorded: true });
+      }
+    }
+
+    // 9. 관리자 관제 대시보드 종합 데이터 (/monitor 화면용)
+    if (method === 'GET' && path === '/api/v1/monitor/summary') {
+      const dbStart = Date.now();
+      const [schedRow, prayerRow, errRow, perfAgg, errList, perfList, auditList]: any[] = await Promise.all([
+        env.DB.prepare('SELECT COUNT(*) as cnt FROM schedules').first(),
+        env.DB.prepare('SELECT COUNT(*) as cnt FROM prayers').first(),
+        env.DB.prepare('SELECT COUNT(*) as cnt FROM error_logs').first(),
+        env.DB.prepare(`
+          SELECT
+            COUNT(*) as totalSamples,
+            AVG(lcp_ms) as avgLcpMs,
+            AVG(fcp_ms) as avgFcpMs,
+            SUM(CASE WHEN lcp_ms >= 3000 OR load_ms >= 4000 THEN 1 ELSE 0 END) as slowSamples
+          FROM perf_logs
+        `).first(),
+        env.DB.prepare('SELECT * FROM error_logs ORDER BY id DESC LIMIT 50').all(),
+        env.DB.prepare('SELECT * FROM perf_logs ORDER BY id DESC LIMIT 20').all(),
+        env.DB.prepare('SELECT * FROM schedule_histories ORDER BY id DESC LIMIT 20').all(),
+      ]);
+      const dbLatencyMs = Date.now() - dbStart;
+
+      return ok({
+        timestampKST: nowKST(),
+        health: {
+          status: 'UP',
+          dbLatencyMs,
+          schedulesCount: schedRow?.cnt || 0,
+          prayersCount: prayerRow?.cnt || 0,
+          errorLogsCount: errRow?.cnt || 0,
+        },
+        perfStats: perfAgg || { totalSamples: 0, avgLcpMs: null, avgFcpMs: null, slowSamples: 0 },
+        recentErrors: errList?.results || [],
+        recentPerfs: perfList?.results || [],
+        recentAudits: auditList?.results || [],
+      });
     }
 
     return err(`요청하신 API 경로(${method} ${path})를 찾을 수 없습니다.`, 404);
@@ -867,6 +1005,7 @@ async function handleApiRequest(request: Request, env: Env): Promise<Response> {
       ).run();
     } catch (_) {}
 
+    sendAlertWebhook(env, ctx, `백엔드 API 치명적 예외 (${method} ${path})`, `${errMsg}\n${errStack}`);
     return err(`서버 내부 오류: ${errMsg}`, 500);
   }
 }
@@ -877,10 +1016,21 @@ export default {
     const url = new URL(request.url);
 
     try {
+      // 관리자용 실시간 관제 대시보드 페이지 서빙
+      if (url.pathname === '/monitor' || url.pathname === '/monitor/') {
+        return new Response(renderMonitorDashboardHtml(), {
+          status: 200,
+          headers: {
+            'Content-Type': 'text/html; charset=utf-8',
+            'Cache-Control': 'no-store',
+          },
+        });
+      }
+
       let response: Response;
       // API 요청은 백엔드 로직 처리
       if (url.pathname.startsWith('/api/v1')) {
-        response = await handleApiRequest(request, env);
+        response = await handleApiRequest(request, env, ctx);
         const durationMs = Date.now() - startTime;
 
         // Cloudflare Observability Logs용 구조화 요청/성능 메트릭 기록
@@ -918,6 +1068,7 @@ export default {
         stack: fatalErr?.stack || '',
         timestamp: nowKST(),
       }));
+      sendAlertWebhook(env, ctx, `Worker 최상위 크래시 (${url.pathname})`, String(fatalErr?.stack || fatalErr));
       return err('일시적인 서버 오류가 발생했습니다.', 500);
     }
   },
