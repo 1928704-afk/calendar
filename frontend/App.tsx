@@ -16,6 +16,7 @@ import { ErrorBoundary } from './src/components/ErrorBoundary';
 import { Header } from './src/components/Header';
 import { BellIcon } from './src/components/icons';
 import { LoginModal } from './src/components/LoginModal';
+import { MonitorModal } from './src/components/MonitorModal';
 import { MyPrayerListView } from './src/components/MyPrayerListView';
 import { NotificationModal } from './src/components/NotificationModal';
 import { PrayerListView } from './src/components/PrayerListView';
@@ -124,10 +125,11 @@ function AppContent() {
   const [selectedDayDate, setSelectedDayDate] = useState<string>('');
   const [selectedDaySchedules, setSelectedDaySchedules] = useState<Schedule[]>([]);
 
-  // 알림 상태
+  // 알림 및 관제 모달 상태
   const [notifications, setNotifications] = useState<NotificationItem[]>([]);
   const [unreadCount, setUnreadCount] = useState<number>(0);
   const [notificationModalVisible, setNotificationModalVisible] = useState<boolean>(false);
+  const [monitorModalVisible, setMonitorModalVisible] = useState<boolean>(false);
   const [toastNotification, setToastNotification] = useState<NotificationItem | null>(null);
 
   // 안드로이드 및 모든 모바일 브라우저에서 일관된 Pretendard 폰트 강제 주입
@@ -595,6 +597,7 @@ function AppContent() {
             onToggleViewMode={setViewMode}
             onSelectDepartment={handleSelectDepartment}
             onOpenNotification={() => setNotificationModalVisible(true)}
+            onOpenMonitor={() => setMonitorModalVisible(true)}
             onOpenLogin={() => setLoginModalVisible(true)}
             onLogout={handleLogout}
           />
@@ -751,6 +754,13 @@ function AppContent() {
         onClose={() => setNotificationModalVisible(false)}
         onSelectNotification={handleSelectNotification}
         onMarkAllAsRead={handleMarkAllAsRead}
+      />
+
+      {/* 실시간 서비스 통합 관제 모달 */}
+      <MonitorModal
+        visible={monitorModalVisible}
+        userName={userSession?.userName}
+        onClose={() => setMonitorModalVisible(false)}
       />
     </SafeAreaView>
   );

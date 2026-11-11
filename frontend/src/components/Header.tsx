@@ -8,6 +8,7 @@ import {
 } from '../constants/theme';
 import { Department, UserSession } from '../types';
 import {
+  ActivityIcon,
   BellIcon,
   BuildingOfficeIcon,
   CalendarIcon,
@@ -26,6 +27,7 @@ interface HeaderProps {
   onToggleViewMode: (mode: 'calendar' | 'timeline') => void;
   onSelectDepartment: (deptId: number, deptName: string) => void;
   onOpenNotification?: () => void;
+  onOpenMonitor?: () => void;
   onOpenLogin: () => void;
   onLogout: () => void;
 }
@@ -39,6 +41,7 @@ export const Header: React.FC<HeaderProps> = ({
   onToggleViewMode,
   onSelectDepartment,
   onOpenNotification,
+  onOpenMonitor,
   onOpenLogin,
   onLogout,
 }) => {
@@ -81,6 +84,18 @@ export const Header: React.FC<HeaderProps> = ({
         </View>
 
         <View style={styles.rightActionGroup}>
+          {/* 실시간 관제 센터 버튼 */}
+          {onOpenMonitor && (
+            <TouchableOpacity
+              style={styles.monitorButton}
+              onPress={onOpenMonitor}
+              activeOpacity={0.7}
+            >
+              <ActivityIcon size={16} color="#10B981" strokeWidth={2.3} />
+              <View style={styles.monitorLiveDot} />
+            </TouchableOpacity>
+          )}
+
           {/* 알림 벨 버튼 */}
           {isLoggedIn && (
             <TouchableOpacity
@@ -312,6 +327,28 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
+  },
+  monitorButton: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    backgroundColor: '#ECFDF5',
+    borderWidth: 1,
+    borderColor: '#A7F3D0',
+    alignItems: 'center',
+    justifyContent: 'center',
+    position: 'relative',
+  },
+  monitorLiveDot: {
+    position: 'absolute',
+    top: -1,
+    right: -1,
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: '#10B981',
+    borderWidth: 1.5,
+    borderColor: '#FFFFFF',
   },
   bellButton: {
     width: 36,

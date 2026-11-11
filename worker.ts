@@ -938,10 +938,10 @@ async function handleApiRequest(request: Request, env: Env, ctx?: ExecutionConte
       }
     }
 
-    // 9. 관리자 관제 대시보드 종합 데이터 (/monitor 화면용)
+    // 9. 관리자 관제 대시보드 종합 데이터 (/monitor 및 앱 내 관제 모달용)
     if (method === 'GET' && path === '/api/v1/monitor/summary') {
       const dbStart = Date.now();
-      const [schedRow, prayerRow, errRow, perfAgg, errList, perfList, auditList]: any[] = await Promise.all([
+      const [schedRow, prayerRow, errRow, perfAgg, perfByDeviceRes, errorByLevelRes, errList, perfList, auditList]: any[] = await Promise.all([
         env.DB.prepare('SELECT COUNT(*) as cnt FROM schedules').first(),
         env.DB.prepare('SELECT COUNT(*) as cnt FROM prayers').first(),
         env.DB.prepare('SELECT COUNT(*) as cnt FROM error_logs').first(),
@@ -950,9 +950,24 @@ async function handleApiRequest(request: Request, env: Env, ctx?: ExecutionConte
             COUNT(*) as totalSamples,
             AVG(lcp_ms) as avgLcpMs,
             AVG(fcp_ms) as avgFcpMs,
+            AVG(ttfb_ms) as avgTtfbMs,
             SUM(CASE WHEN lcp_ms >= 3000 OR load_ms >= 4000 THEN 1 ELSE 0 END) as slowSamples
           FROM perf_logs
         `).first(),
+        env.DB.prepare(`
+          SELECT
+            device_type as deviceType,
+            COUNT(*) as count,
+            AVG(ttfb_ms) as avgTtfbMs,
+            AVG(fcp_ms) as avgFcpMs,
+            AVG(lcp_ms) as avgLcpMs
+          FROM perf_logs
+          GROUP BY device_type
+          ORDER BY count DESC
+        `).all(),
+        env.DB.prepare(`
+          SELECT level, COUNT(*) as count FROM error_logs GROUP BY level
+        `).all(),
         env.DB.prepare('SELECT * FROM error_logs ORDER BY id DESC LIMIT 50').all(),
         env.DB.prepare('SELECT * FROM perf_logs ORDER BY id DESC LIMIT 20').all(),
         env.DB.prepare('SELECT * FROM schedule_histories ORDER BY id DESC LIMIT 20').all(),
@@ -961,6 +976,11 @@ async function handleApiRequest(request: Request, env: Env, ctx?: ExecutionConte
 
       return ok({
         timestampKST: nowKST(),
+        integrations: {
+          cloudflareObservability: true,
+          d1Connected: true,
+          webhookConfigured: Boolean(env.ALERT_WEBHOOK_URL),
+        },
         health: {
           status: 'UP',
           dbLatencyMs,
@@ -968,7 +988,9 @@ async function handleApiRequest(request: Request, env: Env, ctx?: ExecutionConte
           prayersCount: prayerRow?.cnt || 0,
           errorLogsCount: errRow?.cnt || 0,
         },
-        perfStats: perfAgg || { totalSamples: 0, avgLcpMs: null, avgFcpMs: null, slowSamples: 0 },
+        perfStats: perfAgg || { totalSamples: 0, avgLcpMs: null, avgFcpMs: null, avgTtfbMs: null, slowSamples: 0 },
+        perfByDevice: perfByDeviceRes?.results || [],
+        errorByLevel: errorByLevelRes?.results || [],
         recentErrors: errList?.results || [],
         recentPerfs: perfList?.results || [],
         recentAudits: auditList?.results || [],

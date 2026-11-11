@@ -236,5 +236,31 @@ export const api = {
       method: 'PATCH',
     });
   },
+
+  // 통합 관제 대시보드 데이터 조회
+  getMonitorSummary: (): Promise<any> => {
+    return request<any>('/monitor/summary');
+  },
+
+  // 관제 테스트 진단 로그 발송
+  sendTestMonitorLog: (userName?: string): Promise<any> => {
+    return request<any>('/logs/error', {
+      method: 'POST',
+      body: JSON.stringify({
+        source: 'MONITOR_TEST',
+        level: 'warn',
+        message: '모바일 앱 관제 UI 테스트 진단 (Sentry/Cloudflare/D1 정상 동작)',
+        userName: userName || '관리자',
+        extra: { triggeredFrom: 'AppMonitorModal' },
+      }),
+    });
+  },
+
+  // 에러 로그 초기화
+  clearMonitorErrors: (): Promise<any> => {
+    return request<any>('/logs/error', {
+      method: 'DELETE',
+    });
+  },
 };
 

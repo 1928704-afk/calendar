@@ -373,3 +373,13 @@ export const BellIcon = createSvgIcon(
   (p) => <Feather name="bell" size={p.size} color={p.color} style={p.style} />
 );
 
+/**
+ * 28. ActivityIcon (실시간 모니터링 / 시스템 상태)
+ */
+export const ActivityIcon = createSvgIcon(
+  <>
+    <polyline points="22 12 18 12 15 21 9 3 6 12 2 12" />
+  </>,
+  (p) => <Feather name="activity" size={p.size} color={p.color} style={p.style} />
+);
+

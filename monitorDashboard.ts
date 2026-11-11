@@ -6,11 +6,12 @@ export function renderMonitorDashboardHtml(): string {
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>전도 캘린더 - 실시간 서비스 관제 대시보드</title>
+  <title>전도 캘린더 - 통합 실시간 관제 대시보드</title>
   <style>
     :root {
       --bg: #0B1120;
       --card: #111827;
+      --card-hover: #172033;
       --card-border: #1F2937;
       --text: #F9FAFB;
       --muted: #9CA3AF;
@@ -18,51 +19,76 @@ export function renderMonitorDashboardHtml(): string {
       --green: #10B981;
       --yellow: #F59E0B;
       --red: #EF4444;
+      --purple: #8B5CF6;
     }
     * { box-sizing: border-box; margin: 0; padding: 0; }
     body {
-      font-family: -apple-system, BlinkMacSystemFont, "Pretendard", "Apple SD Gothic Neo", "Noto Sans KR", sans-serif;
+      font-family: "Pretendard Variable", -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo", "Noto Sans KR", sans-serif;
       background-color: var(--bg);
       color: var(--text);
       line-height: 1.5;
       padding: 20px;
     }
-    .container { max-width: 1200px; margin: 0 auto; }
+    .container { max-width: 1240px; margin: 0 auto; }
     header {
       display: flex;
       flex-wrap: wrap;
       justify-content: space-between;
       align-items: center;
       gap: 12px;
-      margin-bottom: 24px;
+      margin-bottom: 20px;
       padding-bottom: 16px;
       border-bottom: 1px solid var(--card-border);
     }
-    .title-group h1 { font-size: 20px; font-weight: 700; display: flex; align-items: center; gap: 8px; }
+    .title-group h1 { font-size: 21px; font-weight: 800; display: flex; align-items: center; gap: 10px; }
     .title-group p { font-size: 13px; color: var(--muted); margin-top: 4px; }
     .actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
-    button {
+    button, a.btn {
       background: #1F2937;
       color: var(--text);
       border: 1px solid #374151;
-      padding: 8px 14px;
+      padding: 8px 13px;
       border-radius: 8px;
       font-size: 13px;
       font-weight: 600;
       cursor: pointer;
+      text-decoration: none;
       transition: all 0.15s;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
     }
-    button:hover { background: #374151; }
+    button:hover, a.btn:hover { background: #374151; }
     button.primary { background: var(--primary); border-color: var(--primary); }
     button.primary:hover { background: #2563EB; }
     button.danger { background: rgba(239,68,68,0.15); color: #FCA5A5; border-color: rgba(239,68,68,0.4); }
     button.danger:hover { background: rgba(239,68,68,0.25); }
 
+    /* 연동 파이프라인 상태 바 */
+    .pipeline-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      gap: 10px;
+      margin-bottom: 18px;
+    }
+    .pipe-card {
+      background: rgba(17, 24, 39, 0.85);
+      border: 1px solid var(--card-border);
+      border-radius: 10px;
+      padding: 11px 14px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 10px;
+    }
+    .pipe-name { font-size: 13px; font-weight: 700; color: #E5E7EB; }
+    .pipe-desc { font-size: 11px; color: var(--muted); }
+
     .grid {
       display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
       gap: 14px;
-      margin-bottom: 24px;
+      margin-bottom: 20px;
     }
     .stat-card {
       background: var(--card);
@@ -74,6 +100,28 @@ export function renderMonitorDashboardHtml(): string {
     .stat-value { font-size: 24px; font-weight: 800; margin-top: 6px; display: flex; align-items: center; gap: 8px; }
     .stat-sub { font-size: 12px; color: var(--muted); margin-top: 4px; }
 
+    /* 탭 네비게이션 */
+    .tabs {
+      display: flex;
+      gap: 8px;
+      margin-bottom: 16px;
+      flex-wrap: wrap;
+    }
+    .tab-btn {
+      background: var(--card);
+      border: 1px solid var(--card-border);
+      color: var(--muted);
+      padding: 8px 16px;
+      border-radius: 9999px;
+      font-size: 13px;
+      font-weight: 700;
+    }
+    .tab-btn.active {
+      background: var(--primary);
+      border-color: var(--primary);
+      color: #FFFFFF;
+    }
+
     .badge {
       display: inline-block;
       padding: 2px 8px;
@@ -83,6 +131,7 @@ export function renderMonitorDashboardHtml(): string {
     }
     .badge.up { background: rgba(16,185,129,0.15); color: #34D399; border: 1px solid rgba(16,185,129,0.3); }
     .badge.down { background: rgba(239,68,68,0.15); color: #F87171; border: 1px solid rgba(239,68,68,0.3); }
+    .badge.standby { background: rgba(156,163,175,0.15); color: #D1D5DB; border: 1px solid rgba(156,163,175,0.3); }
     .badge.fatal { background: rgba(239,68,68,0.2); color: #FCA5A5; }
     .badge.error { background: rgba(245,158,11,0.2); color: #FCD34D; }
     .badge.warn { background: rgba(59,130,246,0.2); color: #93C5FD; }
@@ -102,9 +151,30 @@ export function renderMonitorDashboardHtml(): string {
       justify-content: space-between;
       align-items: center;
       flex-wrap: wrap;
-      gap: 8px;
+      gap: 10px;
     }
     .section-title { font-size: 15px; font-weight: 700; }
+    .filter-bar { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+    .filter-input {
+      background: #0F172A;
+      border: 1px solid #374151;
+      color: var(--text);
+      padding: 6px 10px;
+      border-radius: 8px;
+      font-size: 12px;
+      outline: none;
+    }
+    .filter-pill { padding: 4px 10px; font-size: 11px; border-radius: 9999px; }
+    .filter-pill.active { background: #2563EB; border-color: #2563EB; color: #fff; }
+
+    /* 기기별 성능 바 차트 */
+    .chart-box { padding: 16px 18px; display: flex; flex-direction: column; gap: 12px; }
+    .bar-row { display: flex; align-items: center; gap: 12px; }
+    .bar-label { width: 100px; font-size: 13px; font-weight: 700; flex-shrink: 0; }
+    .bar-track { flex: 1; height: 14px; background: #0F172A; border-radius: 9999px; overflow: hidden; border: 1px solid #1F2937; }
+    .bar-fill { height: 100%; border-radius: 9999px; transition: width 0.4s ease; }
+    .bar-val { width: 140px; text-align: right; font-size: 12px; color: var(--muted); flex-shrink: 0; }
+
     .table-wrap { overflow-x: auto; }
     table { width: 100%; border-collapse: collapse; font-size: 13px; text-align: left; }
     th {
@@ -115,11 +185,7 @@ export function renderMonitorDashboardHtml(): string {
       border-bottom: 1px solid var(--card-border);
       white-space: nowrap;
     }
-    td {
-      padding: 12px 14px;
-      border-bottom: 1px solid var(--card-border);
-      vertical-align: top;
-    }
+    td { padding: 12px 14px; border-bottom: 1px solid var(--card-border); vertical-align: top; }
     tr:last-child td { border-bottom: none; }
     .empty-state { padding: 36px; text-align: center; color: var(--muted); font-size: 14px; }
     pre.stack {
@@ -152,28 +218,61 @@ export function renderMonitorDashboardHtml(): string {
   <div class="container">
     <header>
       <div class="title-group">
-        <h1><span class="pulse" id="statusDot"></span> 전도 캘린더 서비스 관제 센터</h1>
-        <p id="lastUpdated">실시간 데이터 불러오는 중... (한국 표준시 KST)</p>
+        <h1><span class="pulse" id="statusDot"></span> 전도 캘린더 통합 관제 센터</h1>
+        <p id="lastUpdated">실시간 데이터 동기화 중... (한국 표준시 KST)</p>
       </div>
       <div class="actions">
+        <a href="/" class="btn">📅 캘린더 홈</a>
         <button onclick="toggleAutoRefresh()" id="autoBtn">자동 갱신: ON (30초)</button>
-        <button class="primary" onclick="loadMonitorData()">지금 새로고침</button>
-        <button onclick="sendTestError()">테스트 로그 전송</button>
-        <button class="danger" onclick="clearErrorLogs()">에러 로그 비우기</button>
+        <button class="primary" onclick="loadMonitorData()">새로고침</button>
+        <button onclick="sendTestError()">테스트 진단</button>
+        <button class="danger" onclick="clearErrorLogs()">에러 비우기</button>
       </div>
     </header>
+
+    <!-- 4대 모니터링 연동 현황 -->
+    <div class="pipeline-grid">
+      <div class="pipe-card">
+        <div>
+          <div class="pipe-name">Cloudflare Observability</div>
+          <div class="pipe-desc">Workers 요청 & 예외 100% 수집</div>
+        </div>
+        <span class="badge up">활성</span>
+      </div>
+      <div class="pipe-card">
+        <div>
+          <div class="pipe-name">Sentry + Web Vitals RUM</div>
+          <div class="pipe-desc">프론트 크래시 & 로딩 속도 측정</div>
+        </div>
+        <span class="badge up">활성</span>
+      </div>
+      <div class="pipe-card">
+        <div>
+          <div class="pipe-name">D1 Health & Audit</div>
+          <div class="pipe-desc">DB 응답속도 및 변경 이력 추적</div>
+        </div>
+        <span class="badge up" id="pipeD1Badge">정상</span>
+      </div>
+      <div class="pipe-card">
+        <div>
+          <div class="pipe-name">Discord / Slack 웹훅</div>
+          <div class="pipe-desc">치명적 오류 즉시 푸시 알림</div>
+        </div>
+        <span class="badge standby" id="pipeWebhookBadge">확인 중</span>
+      </div>
+    </div>
 
     <!-- 핵심 요약 카드 -->
     <div class="grid">
       <div class="stat-card">
         <div class="stat-label">시스템 및 D1 DB 상태</div>
         <div class="stat-value" id="healthStatus">-</div>
-        <div class="stat-sub" id="dbLatency">DB 응답속도: - ms</div>
+        <div class="stat-sub" id="dbLatency">DB 왕복 응답: - ms</div>
       </div>
       <div class="stat-card">
         <div class="stat-label">실시간 에러 건수</div>
         <div class="stat-value" id="errorCount">-</div>
-        <div class="stat-sub">최근 500건 기준 보존</div>
+        <div class="stat-sub" id="errorBreakdown">Fatal 0 · Error 0 · Warn 0</div>
       </div>
       <div class="stat-card">
         <div class="stat-label">평균 체감 로딩 (LCP / FCP)</div>
@@ -187,11 +286,36 @@ export function renderMonitorDashboardHtml(): string {
       </div>
     </div>
 
+    <!-- 탭 메뉴 -->
+    <div class="tabs">
+      <button class="tab-btn active" onclick="switchTab('all', this)">전체 보기</button>
+      <button class="tab-btn" onclick="switchTab('errors', this)">🚨 에러 로그</button>
+      <button class="tab-btn" onclick="switchTab('perf', this)">⚡ 체감 속도</button>
+      <button class="tab-btn" onclick="switchTab('audits', this)">📝 활동 감사 로그</button>
+    </div>
+
+    <!-- 기기별 체감 속도 비교 차트 -->
+    <div class="section" id="secDeviceChart">
+      <div class="section-header">
+        <div class="section-title">📱 기기별 평균 화면 로딩 속도 비교 (LCP 기준)</div>
+        <span style="font-size: 12px; color: var(--muted);">녹색 2.5초↓(쾌적) · 주황 3.0초↓(보통) · 빨강 3.0초↑(지연)</span>
+      </div>
+      <div class="chart-box" id="deviceChartBox">
+        <div class="empty-state">기기별 성능 데이터 수집 대기 중...</div>
+      </div>
+    </div>
+
     <!-- 1. 에러 & 크래시 로그 -->
-    <div class="section">
+    <div class="section" id="secErrors">
       <div class="section-header">
         <div class="section-title">🚨 실시간 버그 / 크래시 / API 에러 로그</div>
-        <span style="font-size: 12px; color: var(--muted);">Sentry + Cloudflare Observability 연동</span>
+        <div class="filter-bar">
+          <button class="filter-pill active" onclick="setLevelFilter('ALL', this)">전체</button>
+          <button class="filter-pill" onclick="setLevelFilter('fatal', this)">FATAL</button>
+          <button class="filter-pill" onclick="setLevelFilter('error', this)">ERROR</button>
+          <button class="filter-pill" onclick="setLevelFilter('warn', this)">WARN</button>
+          <input class="filter-input" id="errSearch" placeholder="메시지/사용자 검색..." oninput="renderErrorTable()" />
+        </div>
       </div>
       <div class="table-wrap" id="errorTableWrap">
         <div class="empty-state">불러오는 중...</div>
@@ -199,9 +323,9 @@ export function renderMonitorDashboardHtml(): string {
     </div>
 
     <!-- 2. 사용자 체감 속도 (Web Vitals) -->
-    <div class="section">
+    <div class="section" id="secPerf">
       <div class="section-header">
-        <div class="section-title">⚡ 모바일/웹 체감 로딩 속도 (Web Vitals RUM)</div>
+        <div class="section-title">⚡ 모바일/웹 체감 로딩 상세 기록 (Web Vitals RUM)</div>
         <span style="font-size: 12px; color: var(--muted);">단위: ms (1,000ms = 1초)</span>
       </div>
       <div class="table-wrap" id="perfTableWrap">
@@ -210,7 +334,7 @@ export function renderMonitorDashboardHtml(): string {
     </div>
 
     <!-- 3. 최근 일정 변경 감사 로그 -->
-    <div class="section">
+    <div class="section" id="secAudits">
       <div class="section-header">
         <div class="section-title">📝 최근 일정 활동 감사 로그 (Audit Trail)</div>
         <span style="font-size: 12px; color: var(--muted);">최근 20건</span>
@@ -224,6 +348,9 @@ export function renderMonitorDashboardHtml(): string {
   <script>
     let autoRefresh = true;
     let timer = null;
+    let currentData = null;
+    let levelFilter = 'ALL';
+    let currentTab = 'all';
 
     function detectDevice(ua) {
       if (!ua) return '기타';
@@ -240,14 +367,78 @@ export function renderMonitorDashboardHtml(): string {
         .replace(/"/g, '&quot;');
     }
 
+    function switchTab(tab, btn) {
+      currentTab = tab;
+      document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+      if (btn) btn.classList.add('active');
+
+      document.getElementById('secDeviceChart').style.display = (tab === 'all' || tab === 'perf') ? 'block' : 'none';
+      document.getElementById('secErrors').style.display = (tab === 'all' || tab === 'errors') ? 'block' : 'none';
+      document.getElementById('secPerf').style.display = (tab === 'all' || tab === 'perf') ? 'block' : 'none';
+      document.getElementById('secAudits').style.display = (tab === 'all' || tab === 'audits') ? 'block' : 'none';
+    }
+
+    function setLevelFilter(lvl, btn) {
+      levelFilter = lvl;
+      document.querySelectorAll('.filter-pill').forEach(b => b.classList.remove('active'));
+      if (btn) btn.classList.add('active');
+      renderErrorTable();
+    }
+
+    function renderErrorTable() {
+      if (!currentData) return;
+      const errWrap = document.getElementById('errorTableWrap');
+      const query = (document.getElementById('errSearch').value || '').trim().toLowerCase();
+      const filtered = (currentData.recentErrors || []).filter(e => {
+        if (levelFilter !== 'ALL' && (e.level || '').toLowerCase() !== levelFilter) return false;
+        if (query) {
+          const target = ((e.message || '') + ' ' + (e.user_name || '') + ' ' + (e.source || '')).toLowerCase();
+          if (!target.includes(query)) return false;
+        }
+        return true;
+      });
+
+      if (filtered.length === 0) {
+        errWrap.innerHTML = '<div class="empty-state">✅ 해당하는 에러/장애 기록이 없습니다.</div>';
+        return;
+      }
+
+      let html = '<table><thead><tr><th>시간 (KST)</th><th>출처 / 등급</th><th>기기 / 사용자</th><th>오류 내용 및 상세</th></tr></thead><tbody>';
+      for (const e of filtered) {
+        const dev = detectDevice(e.user_agent);
+        const lvlClass = e.level === 'fatal' ? 'fatal' : (e.level === 'warn' ? 'warn' : 'error');
+        html += '<tr>'
+          + '<td style="white-space:nowrap;color:var(--muted)">' + escapeHtml(e.created_at) + '</td>'
+          + '<td style="white-space:nowrap"><span class="badge ' + lvlClass + '">' + escapeHtml((e.level || '').toUpperCase()) + '</span><div style="font-size:11px;color:var(--muted);margin-top:4px">' + escapeHtml(e.source) + '</div></td>'
+          + '<td style="white-space:nowrap"><span class="badge device">' + dev + '</span><div style="font-size:12px;margin-top:4px">' + escapeHtml(e.user_name || '비로그인') + '</div></td>'
+          + '<td><div style="font-weight:600">' + escapeHtml(e.message) + '</div>'
+          + (e.url ? '<div style="font-size:11px;color:var(--muted);margin-top:2px">' + escapeHtml(e.url) + '</div>' : '')
+          + (e.stack || e.extra_json ? '<details><summary>스택 / 상세 정보 보기</summary><pre class="stack">' + escapeHtml((e.stack || '') + (e.extra_json ? '\\n[Extra] ' + e.extra_json : '')) + '</pre></details>' : '')
+          + '</td></tr>';
+      }
+      html += '</tbody></table>';
+      errWrap.innerHTML = html;
+    }
+
     async function loadMonitorData() {
       try {
         const res = await fetch('/api/v1/monitor/summary');
         const json = await res.json();
         if (!json.success) throw new Error(json.message);
         const d = json.data;
+        currentData = d;
 
         document.getElementById('lastUpdated').textContent = '마지막 업데이트: ' + d.timestampKST + ' (KST)';
+
+        // 연동 배지 업데이트
+        const whBadge = document.getElementById('pipeWebhookBadge');
+        if (d.integrations && d.integrations.webhookConfigured) {
+          whBadge.className = 'badge up';
+          whBadge.textContent = '연동됨';
+        } else {
+          whBadge.className = 'badge standby';
+          whBadge.textContent = '미설정(선택)';
+        }
 
         // 1. 헬스 상태
         const healthEl = document.getElementById('healthStatus');
@@ -261,11 +452,15 @@ export function renderMonitorDashboardHtml(): string {
         }
         document.getElementById('dbLatency').textContent = 'D1 DB 왕복 응답: ' + d.health.dbLatencyMs + ' ms';
 
-        // 2. 에러 건수
+        // 2. 에러 건수 & 등급 분포
         const errCnt = d.health.errorLogsCount || 0;
         document.getElementById('errorCount').innerHTML = errCnt > 0
           ? '<span style="color:#F87171">' + errCnt + ' 건</span>'
           : '<span style="color:#34D399">0 건 (깨끗)</span>';
+
+        const lvlMap = { fatal: 0, error: 0, warn: 0 };
+        (d.errorByLevel || []).forEach(r => { lvlMap[r.level] = r.count; });
+        document.getElementById('errorBreakdown').textContent = 'Fatal ' + (lvlMap.fatal || 0) + ' · Error ' + (lvlMap.error || 0) + ' · Warn ' + (lvlMap.warn || 0);
 
         // 3. 평균 웹 성능
         const avgLcp = d.perfStats.avgLcpMs ? Math.round(d.perfStats.avgLcpMs) + 'ms' : '-';
@@ -277,32 +472,33 @@ export function renderMonitorDashboardHtml(): string {
         document.getElementById('dataCounts').textContent = (d.health.schedulesCount || 0) + ' 일정';
         document.getElementById('prayerCountSub').textContent = '등록된 전도 대상자: ' + (d.health.prayersCount || 0) + ' 명';
 
-        // 에러 로그 테이블
-        const errWrap = document.getElementById('errorTableWrap');
-        if (!d.recentErrors || d.recentErrors.length === 0) {
-          errWrap.innerHTML = '<div class="empty-state">✅ 최근 발생한 버그나 에러가 없습니다. 서비스가 매우 안정적으로 운영 중입니다.</div>';
+        // 기기별 성능 바 차트
+        const chartBox = document.getElementById('deviceChartBox');
+        if (!d.perfByDevice || d.perfByDevice.length === 0) {
+          chartBox.innerHTML = '<div class="empty-state">아직 기기별 성능 표본이 수집되지 않았습니다. 앱 메인 페이지를 열면 자동 측정됩니다.</div>';
         } else {
-          let html = '<table><thead><tr><th>시간 (KST)</th><th>출처 / 등급</th><th>기기 / 사용자</th><th>오류 내용 및 상세</th></tr></thead><tbody>';
-          for (const e of d.recentErrors) {
-            const dev = detectDevice(e.user_agent);
-            const lvlClass = e.level === 'fatal' ? 'fatal' : (e.level === 'warn' ? 'warn' : 'error');
-            html += '<tr>'
-              + '<td style="white-space:nowrap;color:var(--muted)">' + escapeHtml(e.created_at) + '</td>'
-              + '<td style="white-space:nowrap"><span class="badge ' + lvlClass + '">' + escapeHtml(e.level.toUpperCase()) + '</span><div style="font-size:11px;color:var(--muted);margin-top:4px">' + escapeHtml(e.source) + '</div></td>'
-              + '<td style="white-space:nowrap"><span class="badge device">' + dev + '</span><div style="font-size:12px;margin-top:4px">' + escapeHtml(e.user_name || '비로그인') + '</div></td>'
-              + '<td><div style="font-weight:600">' + escapeHtml(e.message) + '</div>'
-              + (e.url ? '<div style="font-size:11px;color:var(--muted);margin-top:2px">' + escapeHtml(e.url) + '</div>' : '')
-              + (e.stack || e.extra_json ? '<details><summary>스택 / 상세 정보 보기</summary><pre class="stack">' + escapeHtml((e.stack || '') + (e.extra_json ? '\\n[Extra] ' + e.extra_json : '')) + '</pre></details>' : '')
-              + '</td></tr>';
+          let cHtml = '';
+          const maxMs = Math.max(3500, ...d.perfByDevice.map(item => Math.round(item.avgLcpMs || item.avgFcpMs || 500)));
+          for (const item of d.perfByDevice) {
+            const ms = Math.round(item.avgLcpMs || item.avgFcpMs || 0);
+            const pct = Math.min(100, Math.max(5, Math.round((ms / maxMs) * 100)));
+            const color = ms >= 3000 ? '#EF4444' : (ms >= 2000 ? '#F59E0B' : '#10B981');
+            cHtml += '<div class="bar-row">'
+              + '<div class="bar-label">' + escapeHtml(item.deviceType) + '</div>'
+              + '<div class="bar-track"><div class="bar-fill" style="width:' + pct + '%;background:' + color + '"></div></div>'
+              + '<div class="bar-val">' + ms + ' ms (' + item.count + '건)</div>'
+              + '</div>';
           }
-          html += '</tbody></table>';
-          errWrap.innerHTML = html;
+          chartBox.innerHTML = cHtml;
         }
+
+        // 에러 로그 테이블 렌더링
+        renderErrorTable();
 
         // 성능 테이블
         const perfWrap = document.getElementById('perfTableWrap');
         if (!d.recentPerfs || d.recentPerfs.length === 0) {
-          perfWrap.innerHTML = '<div class="empty-state">아직 수집된 속도 측정 데이터가 없습니다. (사용자가 페이지 접속 시 자동 기록됩니다)</div>';
+          perfWrap.innerHTML = '<div class="empty-state">아직 수집된 속도 측정 데이터가 없습니다.</div>';
         } else {
           let pHtml = '<table><thead><tr><th>시간 (KST)</th><th>접속 기기</th><th>서버 응답 (TTFB)</th><th>초기 화면 (FCP)</th><th>메인 완료 (LCP)</th><th>전체 로드</th></tr></thead><tbody>';
           for (const p of d.recentPerfs) {
@@ -349,7 +545,7 @@ export function renderMonitorDashboardHtml(): string {
         body: JSON.stringify({
           source: 'MONITOR_TEST',
           level: 'warn',
-          message: '관제 센터 테스트 로그 (모니터링 & 웹훅 정상 동작 점검)',
+          message: '관제 센터 테스트 진단 로그 (모니터링 & 웹훅 정상 동작 확인)',
           userName: '관리자',
           extra: { test: true }
         })
