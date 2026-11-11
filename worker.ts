@@ -1249,7 +1249,21 @@ export default {
       }
 
       // 그 외 웹 페이지 및 정적 파일 요청은 프론트엔드 정적 자산 서빙
-      return await env.ASSETS.fetch(request);
+      const assetRes = await env.ASSETS.fetch(request);
+      if (
+        url.pathname === '/' ||
+        url.pathname.endsWith('.html') ||
+        url.pathname === '/service-worker.js'
+      ) {
+        const newHeaders = new Headers(assetRes.headers);
+        newHeaders.set('Cache-Control', 'no-cache, no-store, must-revalidate');
+        return new Response(assetRes.body, {
+          status: assetRes.status,
+          statusText: assetRes.statusText,
+          headers: newHeaders,
+        });
+      }
+      return assetRes;
     } catch (fatalErr: any) {
       // 최상위 Worker 크래시 감지 및 Cloudflare Observability 기록
       console.error(JSON.stringify({
