@@ -333,11 +333,17 @@ export function renderMonitorDashboardHtml(): string {
       </div>
     </div>
 
-    <!-- 3. 최근 일정 변경 감사 로그 -->
+    <!-- 3. 전 기능 통합 활동 감사 로그 -->
     <div class="section" id="secAudits">
       <div class="section-header">
-        <div class="section-title">📝 최근 일정 활동 감사 로그 (Audit Trail)</div>
-        <span style="font-size: 12px; color: var(--muted);">최근 20건</span>
+        <div class="section-title">📝 전 기능 활동 감사 로그 (일정 · 댓글 · 기도명단 · 접속)</div>
+        <div class="filter-bar">
+          <button class="filter-pill audit-pill active" onclick="setAuditFilter('ALL', this)">전체</button>
+          <button class="filter-pill audit-pill" onclick="setAuditFilter('SCHEDULE', this)">📅 일정</button>
+          <button class="filter-pill audit-pill" onclick="setAuditFilter('COMMENT', this)">💬 댓글</button>
+          <button class="filter-pill audit-pill" onclick="setAuditFilter('PRAYER', this)">🙏 기도명단</button>
+          <button class="filter-pill audit-pill" onclick="setAuditFilter('AUTH', this)">🔐 접속</button>
+        </div>
       </div>
       <div class="table-wrap" id="auditTableWrap">
         <div class="empty-state">불러오는 중...</div>
@@ -350,6 +356,7 @@ export function renderMonitorDashboardHtml(): string {
     let timer = null;
     let currentData = null;
     let levelFilter = 'ALL';
+    let auditFilter = 'ALL';
     let currentTab = 'all';
 
     function detectDevice(ua) {
@@ -380,9 +387,50 @@ export function renderMonitorDashboardHtml(): string {
 
     function setLevelFilter(lvl, btn) {
       levelFilter = lvl;
-      document.querySelectorAll('.filter-pill').forEach(b => b.classList.remove('active'));
+      document.querySelectorAll('.filter-pill:not(.audit-pill)').forEach(b => b.classList.remove('active'));
       if (btn) btn.classList.add('active');
       renderErrorTable();
+    }
+
+    function setAuditFilter(cat, btn) {
+      auditFilter = cat;
+      document.querySelectorAll('.audit-pill').forEach(b => b.classList.remove('active'));
+      if (btn) btn.classList.add('active');
+      renderAuditTable();
+    }
+
+    function getCategoryLabel(cat) {
+      if (cat === 'SCHEDULE') return '📅 일정';
+      if (cat === 'COMMENT') return '💬 댓글';
+      if (cat === 'PRAYER') return '🙏 기도명단';
+      if (cat === 'AUTH') return '🔐 접속';
+      return '📝 기타';
+    }
+
+    function renderAuditTable() {
+      if (!currentData) return;
+      const auditWrap = document.getElementById('auditTableWrap');
+      const list = (currentData.recentAudits || []).filter(a => {
+        if (auditFilter === 'ALL') return true;
+        return (a.category || 'SCHEDULE') === auditFilter;
+      });
+      if (list.length === 0) {
+        auditWrap.innerHTML = '<div class="empty-state">해당 카테고리의 활동 기록이 없습니다.</div>';
+        return;
+      }
+      let aHtml = '<table><thead><tr><th>시간 (KST)</th><th>기능 / 작업</th><th>사용자 (부서)</th><th>상세 내용</th></tr></thead><tbody>';
+      for (const a of list) {
+        const actor = a.actor_name || a.modifier_name || '-';
+        const dept = a.department_name ? ' (' + escapeHtml(a.department_name) + ')' : '';
+        aHtml += '<tr>'
+          + '<td style="white-space:nowrap;color:var(--muted)">' + escapeHtml(a.created_at) + '</td>'
+          + '<td style="white-space:nowrap"><span class="badge device">' + getCategoryLabel(a.category) + '</span> <span style="font-size:11px;color:var(--muted)">' + escapeHtml(a.action_type) + '</span></td>'
+          + '<td style="font-weight:600;white-space:nowrap">' + escapeHtml(actor) + dept + '</td>'
+          + '<td>' + escapeHtml(a.detail) + '</td>'
+          + '</tr>';
+      }
+      aHtml += '</tbody></table>';
+      auditWrap.innerHTML = aHtml;
     }
 
     function renderErrorTable() {
@@ -516,23 +564,8 @@ export function renderMonitorDashboardHtml(): string {
           perfWrap.innerHTML = pHtml;
         }
 
-        // 감사 로그 테이블
-        const auditWrap = document.getElementById('auditTableWrap');
-        if (!d.recentAudits || d.recentAudits.length === 0) {
-          auditWrap.innerHTML = '<div class="empty-state">최근 일정 변경 기록이 없습니다.</div>';
-        } else {
-          let aHtml = '<table><thead><tr><th>시간 (KST)</th><th>작업</th><th>작성/수정자</th><th>상세 내용</th></tr></thead><tbody>';
-          for (const a of d.recentAudits) {
-            aHtml += '<tr>'
-              + '<td style="white-space:nowrap;color:var(--muted)">' + escapeHtml(a.created_at) + '</td>'
-              + '<td><span class="badge device">' + escapeHtml(a.action_type) + '</span></td>'
-              + '<td style="font-weight:600">' + escapeHtml(a.modifier_name) + '</td>'
-              + '<td>' + escapeHtml(a.detail) + '</td>'
-              + '</tr>';
-          }
-          aHtml += '</tbody></table>';
-          auditWrap.innerHTML = aHtml;
-        }
+        // 통합 활동 감사 로그 렌더링
+        renderAuditTable();
       } catch (err) {
         document.getElementById('lastUpdated').textContent = '데이터 로드 오류: ' + err.message;
       }

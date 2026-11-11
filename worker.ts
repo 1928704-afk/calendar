@@ -144,7 +144,32 @@ async function ensureSchema(db: D1Database) {
         created_at TEXT NOT NULL
       )
     `),
+    db.prepare(`
+      CREATE TABLE IF NOT EXISTS activity_logs (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        category TEXT NOT NULL,
+        action_type TEXT NOT NULL,
+        actor_name TEXT NOT NULL,
+        department_name TEXT,
+        detail TEXT NOT NULL,
+        created_at TEXT NOT NULL
+      )
+    `),
   ]);
+
+  // 기존 일정 히스토리를 통합 activity_logs에 초기 1회 마이그레이션
+  try {
+    const actCnt: any = await db.prepare('SELECT COUNT(*) as cnt FROM activity_logs').first();
+    if (actCnt && actCnt.cnt === 0) {
+      await db.prepare(`
+        INSERT INTO activity_logs (category, action_type, actor_name, department_name, detail, created_at)
+        SELECT 'SCHEDULE', sh.action_type, sh.modifier_name, COALESCE(d.name, ''), COALESCE(sh.detail, ''), sh.created_at
+        FROM schedule_histories sh
+        LEFT JOIN departments d ON sh.department_id = d.id
+        ORDER BY sh.id DESC LIMIT 50
+      `).run();
+    }
+  } catch (_) {}
 
   await db.prepare(`
     INSERT OR IGNORE INTO departments (name, sort_order) VALUES 
@@ -250,6 +275,39 @@ function sendAlertWebhook(
   }
 }
 
+// 전 기능 통합 활동 감사 로그 기록 헬퍼 (로그인/일정/댓글/기도명단 등)
+async function recordActivity(
+  db: D1Database,
+  category: 'AUTH' | 'SCHEDULE' | 'COMMENT' | 'PRAYER' | 'NOTIFICATION',
+  actionType: string,
+  actorName: string,
+  departmentName: string,
+  detail: string,
+  createdAt?: string
+) {
+  try {
+    const nowStr = createdAt || nowKST();
+    await db.prepare(`
+      INSERT INTO activity_logs (category, action_type, actor_name, department_name, detail, created_at)
+      VALUES (?, ?, ?, ?, ?, ?)
+    `).bind(
+      category,
+      actionType,
+      (actorName || '사용자').slice(0, 100),
+      (departmentName || '').slice(0, 50),
+      (detail || '').slice(0, 500),
+      nowStr
+    ).run();
+
+    // 최근 500건만 유지하여 D1 용량 최적화
+    await db.prepare(`
+      DELETE FROM activity_logs WHERE id NOT IN (SELECT id FROM activity_logs ORDER BY id DESC LIMIT 500)
+    `).run().catch(() => {});
+  } catch (e) {
+    console.warn('활동 로그 기록 중 경고:', e);
+  }
+}
+
 async function handleApiRequest(request: Request, env: Env, ctx?: ExecutionContext): Promise<Response> {
   const url = new URL(request.url);
   const path = url.pathname.replace(/\/$/, '');
@@ -289,22 +347,26 @@ async function handleApiRequest(request: Request, env: Env, ctx?: ExecutionConte
       if (!userName) return err('이름을 입력해 주세요.');
 
       if (departmentId === 0) {
+        const loginAt = nowKST();
+        await recordActivity(env.DB, 'AUTH', 'LOGIN', userName, '전체 부서', '서비스 입장 (전체 부서 보기)', loginAt);
         return ok({
           departmentId: 0,
           departmentName: '전체 부서',
           userName,
-          loginAt: nowKST(),
+          loginAt,
         }, '성공적으로 입장하였습니다.');
       }
 
       const dept: any = await env.DB.prepare('SELECT id, name FROM departments WHERE id = ?').bind(departmentId).first();
       if (!dept) return err('존재하지 않는 부서입니다.');
 
+      const loginAt = nowKST();
+      await recordActivity(env.DB, 'AUTH', 'LOGIN', userName, dept.name, `${dept.name} 소속으로 입장 (로그인)`, loginAt);
       return ok({
         departmentId: dept.id,
         departmentName: dept.name,
         userName,
-        loginAt: nowKST(),
+        loginAt,
       }, '성공적으로 입장하였습니다.');
     }
 
@@ -397,6 +459,16 @@ async function handleApiRequest(request: Request, env: Env, ctx?: ExecutionConte
           INSERT INTO schedule_histories (schedule_id, department_id, modifier_name, action_type, detail, created_at)
           VALUES (?, ?, ?, 'CREATE', ?, ?)
         `).bind(newId, targetDeptId, body.authorName, `'${body.title}' 일정을 등록했습니다.`, nowStr).run();
+
+        await recordActivity(
+          env.DB,
+          'SCHEDULE',
+          'CREATE',
+          body.authorName,
+          deptName,
+          `'${body.title}' 일정 등록 (${body.scheduleDate}${body.targetName ? ` · 대상: ${body.targetName}` : ''})`,
+          nowStr
+        );
 
         return ok({
           id: newId,
@@ -546,6 +618,16 @@ async function handleApiRequest(request: Request, env: Env, ctx?: ExecutionConte
           WHERE s.id = ?
         `).bind(scheduleId).first();
 
+        await recordActivity(
+          env.DB,
+          'SCHEDULE',
+          'UPDATE',
+          body.updatedBy || body.authorName,
+          updated?.departmentName || '',
+          `'${body.title}' 일정 수정 (${body.scheduleDate})`,
+          nowStr
+        );
+
         return ok({
           id: updated.id,
           departmentId: updated.department_id,
@@ -571,10 +653,24 @@ async function handleApiRequest(request: Request, env: Env, ctx?: ExecutionConte
         const modifierName = url.searchParams.get('modifierName') || '사용자';
         const nowStr = nowKST();
 
+        const targetSched: any = await env.DB.prepare(
+          'SELECT s.title, d.name as departmentName FROM schedules s LEFT JOIN departments d ON s.department_id = d.id WHERE s.id = ?'
+        ).bind(scheduleId).first();
+
         await env.DB.prepare(`
           INSERT INTO schedule_histories (schedule_id, department_id, modifier_name, action_type, detail, created_at)
           VALUES (?, ?, ?, 'DELETE', '일정을 삭제했습니다.', ?)
         `).bind(scheduleId, departmentId, modifierName, nowStr).run();
+
+        await recordActivity(
+          env.DB,
+          'SCHEDULE',
+          'DELETE',
+          modifierName,
+          targetSched?.departmentName || '',
+          `'${targetSched?.title || `#${scheduleId}`}' 일정 삭제`,
+          nowStr
+        );
 
         await env.DB.prepare('DELETE FROM schedules WHERE id = ?').bind(scheduleId).run();
         await env.DB.prepare('DELETE FROM comments WHERE schedule_id = ?').bind(scheduleId).run();
@@ -631,7 +727,7 @@ async function handleApiRequest(request: Request, env: Env, ctx?: ExecutionConte
         const commentId = res.meta.last_row_id;
 
         const sched: any = await env.DB.prepare(
-          'SELECT title, author_name FROM schedules WHERE id = ?'
+          'SELECT s.title, s.author_name, d.name as departmentName FROM schedules s LEFT JOIN departments d ON s.department_id = d.id WHERE s.id = ?'
         ).bind(scheduleId).first();
 
         if (sched && sched.author_name && sched.author_name !== body.authorName) {
@@ -641,6 +737,16 @@ async function handleApiRequest(request: Request, env: Env, ctx?: ExecutionConte
             ) VALUES (?, ?, ?, ?, ?, 0, ?)
           `).bind(sched.author_name, body.authorName, scheduleId, sched.title, body.content, nowStr).run();
         }
+
+        await recordActivity(
+          env.DB,
+          'COMMENT',
+          'CREATE',
+          body.authorName,
+          sched?.departmentName || '',
+          `[${sched?.title || '일정'}] 댓글 작성: "${String(body.content || '').slice(0, 60)}"`,
+          nowStr
+        );
 
         return ok({
           id: commentId,
@@ -656,7 +762,16 @@ async function handleApiRequest(request: Request, env: Env, ctx?: ExecutionConte
     const commentDeleteMatch = path.match(/^\/api\/v1\/schedules\/(\d+)\/comments\/(\d+)$/);
     if (method === 'DELETE' && commentDeleteMatch) {
       const commentId = Number(commentDeleteMatch[2]);
+      const existingComment: any = await env.DB.prepare('SELECT author_name, content FROM comments WHERE id = ?').bind(commentId).first();
       await env.DB.prepare('DELETE FROM comments WHERE id = ?').bind(commentId).run();
+      await recordActivity(
+        env.DB,
+        'COMMENT',
+        'DELETE',
+        existingComment?.author_name || '사용자',
+        '',
+        `댓글 삭제: "${String(existingComment?.content || '').slice(0, 50)}"`
+      );
       return ok(null, '댓글이 삭제되었습니다.');
     }
 
@@ -718,6 +833,16 @@ async function handleApiRequest(request: Request, env: Env, ctx?: ExecutionConte
         ).run();
 
         const newId = res.meta.last_row_id;
+        await recordActivity(
+          env.DB,
+          'PRAYER',
+          'CREATE',
+          body.leader,
+          body.department,
+          `전도 대상자 '${body.target}' 신규 등록${body.relationship ? ` (${body.relationship})` : ''}`,
+          nowStr
+        );
+
         return ok({
           id: newId,
           department: body.department,
@@ -744,6 +869,16 @@ async function handleApiRequest(request: Request, env: Env, ctx?: ExecutionConte
         .run();
 
       const item: any = await env.DB.prepare('SELECT * FROM prayers WHERE id = ?').bind(id).first();
+      await recordActivity(
+        env.DB,
+        'PRAYER',
+        isRally === 1 ? 'RALLY_ON' : 'RALLY_OFF',
+        item.leader,
+        item.department,
+        `'${item.target}' 11월 대집회 집중기도 ${isRally === 1 ? '등록' : '해제'}`,
+        nowStr
+      );
+
       return ok({
         id: item.id,
         department: item.department,
@@ -760,7 +895,16 @@ async function handleApiRequest(request: Request, env: Env, ctx?: ExecutionConte
     const prayerDeleteMatch = path.match(/^\/api\/v1\/prayers\/(\d+)$/);
     if (method === 'DELETE' && prayerDeleteMatch) {
       const id = Number(prayerDeleteMatch[1]);
+      const existingPrayer: any = await env.DB.prepare('SELECT department, leader, target FROM prayers WHERE id = ?').bind(id).first();
       await env.DB.prepare('DELETE FROM prayers WHERE id = ?').bind(id).run();
+      await recordActivity(
+        env.DB,
+        'PRAYER',
+        'DELETE',
+        existingPrayer?.leader || '사용자',
+        existingPrayer?.department || '',
+        `전도 대상자 '${existingPrayer?.target || `#${id}`}' 명단 삭제`
+      );
       return ok(null, '기도 대상이 삭제되었습니다.');
     }
 
@@ -941,7 +1085,7 @@ async function handleApiRequest(request: Request, env: Env, ctx?: ExecutionConte
     // 9. 관리자 관제 대시보드 종합 데이터 (/monitor 및 앱 내 관제 모달용)
     if (method === 'GET' && path === '/api/v1/monitor/summary') {
       const dbStart = Date.now();
-      const [schedRow, prayerRow, errRow, perfAgg, perfByDeviceRes, errorByLevelRes, errList, perfList, auditList]: any[] = await Promise.all([
+      const [schedRow, prayerRow, errRow, perfAgg, perfByDeviceRes, errorByLevelRes, auditByCatRes, errList, perfList, auditList]: any[] = await Promise.all([
         env.DB.prepare('SELECT COUNT(*) as cnt FROM schedules').first(),
         env.DB.prepare('SELECT COUNT(*) as cnt FROM prayers').first(),
         env.DB.prepare('SELECT COUNT(*) as cnt FROM error_logs').first(),
@@ -968,9 +1112,12 @@ async function handleApiRequest(request: Request, env: Env, ctx?: ExecutionConte
         env.DB.prepare(`
           SELECT level, COUNT(*) as count FROM error_logs GROUP BY level
         `).all(),
+        env.DB.prepare(`
+          SELECT category, COUNT(*) as count FROM activity_logs GROUP BY category
+        `).all(),
         env.DB.prepare('SELECT * FROM error_logs ORDER BY id DESC LIMIT 50').all(),
         env.DB.prepare('SELECT * FROM perf_logs ORDER BY id DESC LIMIT 20').all(),
-        env.DB.prepare('SELECT * FROM schedule_histories ORDER BY id DESC LIMIT 20').all(),
+        env.DB.prepare('SELECT * FROM activity_logs ORDER BY id DESC LIMIT 50').all(),
       ]);
       const dbLatencyMs = Date.now() - dbStart;
 
@@ -991,6 +1138,7 @@ async function handleApiRequest(request: Request, env: Env, ctx?: ExecutionConte
         perfStats: perfAgg || { totalSamples: 0, avgLcpMs: null, avgFcpMs: null, avgTtfbMs: null, slowSamples: 0 },
         perfByDevice: perfByDeviceRes?.results || [],
         errorByLevel: errorByLevelRes?.results || [],
+        auditByCategory: auditByCatRes?.results || [],
         recentErrors: errList?.results || [],
         recentPerfs: perfList?.results || [],
         recentAudits: auditList?.results || [],

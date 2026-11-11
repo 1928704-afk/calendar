@@ -21,6 +21,7 @@ interface MonitorModalProps {
 
 type MonitorTab = 'errors' | 'perf' | 'audits';
 type LevelFilter = 'ALL' | 'fatal' | 'error' | 'warn';
+type AuditCategoryFilter = 'ALL' | 'SCHEDULE' | 'COMMENT' | 'PRAYER' | 'AUTH';
 
 export const MonitorModal: React.FC<MonitorModalProps> = ({
   visible,
@@ -32,6 +33,7 @@ export const MonitorModal: React.FC<MonitorModalProps> = ({
   const [errorMsg, setErrorMsg] = useState('');
   const [activeTab, setActiveTab] = useState<MonitorTab>('errors');
   const [levelFilter, setLevelFilter] = useState<LevelFilter>('ALL');
+  const [auditFilter, setAuditFilter] = useState<AuditCategoryFilter>('ALL');
   const [expandedErrorId, setExpandedErrorId] = useState<number | null>(null);
   const [actionBusy, setActionBusy] = useState(false);
 
@@ -97,6 +99,26 @@ export const MonitorModal: React.FC<MonitorModalProps> = ({
     if (levelFilter === 'ALL') return true;
     return (item.level || '').toLowerCase() === levelFilter;
   });
+
+  const filteredAudits = (data?.recentAudits || []).filter((item: any) => {
+    if (auditFilter === 'ALL') return true;
+    return (item.category || 'SCHEDULE') === auditFilter;
+  });
+
+  const getAuditCategoryLabel = (cat?: string) => {
+    switch (cat) {
+      case 'SCHEDULE':
+        return '📅 일정';
+      case 'COMMENT':
+        return '💬 댓글';
+      case 'PRAYER':
+        return '🙏 기도명단';
+      case 'AUTH':
+        return '🔐 접속';
+      default:
+        return '📝 활동';
+    }
+  };
 
   const errorLevelCountMap: Record<string, number> = { fatal: 0, error: 0, warn: 0 };
   (data?.errorByLevel || []).forEach((r: any) => {
@@ -412,25 +434,62 @@ export const MonitorModal: React.FC<MonitorModalProps> = ({
                   </View>
                 )}
 
-                {/* 탭 내용 3: 일정 활동 감사 로그 */}
+                {/* 탭 내용 3: 전 기능 활동 감사 로그 */}
                 {activeTab === 'audits' && (
                   <View style={styles.listSection}>
-                    {(!data.recentAudits || data.recentAudits.length === 0) ? (
+                    <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 4 }}>
+                      <View style={styles.filterRow}>
+                        {(
+                          [
+                            { key: 'ALL', label: '전체' },
+                            { key: 'SCHEDULE', label: '📅 일정' },
+                            { key: 'COMMENT', label: '💬 댓글' },
+                            { key: 'PRAYER', label: '🙏 기도명단' },
+                            { key: 'AUTH', label: '🔐 접속' },
+                          ] as { key: AuditCategoryFilter; label: string }[]
+                        ).map((item) => (
+                          <TouchableOpacity
+                            key={item.key}
+                            style={[styles.filterChip, auditFilter === item.key && styles.filterChipActive]}
+                            onPress={() => setAuditFilter(item.key)}
+                          >
+                            <Text
+                              style={[
+                                styles.filterChipText,
+                                auditFilter === item.key && styles.filterChipTextActive,
+                              ]}
+                            >
+                              {item.label}
+                            </Text>
+                          </TouchableOpacity>
+                        ))}
+                      </View>
+                    </ScrollView>
+
+                    {filteredAudits.length === 0 ? (
                       <View style={styles.emptyBox}>
-                        <Text style={styles.emptyBoxText}>최근 일정 변경 기록이 없습니다.</Text>
+                        <Text style={styles.emptyBoxText}>해당 기능의 활동 기록이 없습니다.</Text>
                       </View>
                     ) : (
-                      data.recentAudits.map((a: any) => (
-                        <View key={a.id} style={styles.logCard}>
-                          <View style={styles.logTop}>
-                            <Text style={styles.auditAction}>
-                              [{a.action_type}] {a.modifier_name}
-                            </Text>
-                            <Text style={styles.logTime}>{a.created_at}</Text>
+                      filteredAudits.map((a: any) => {
+                        const actor = a.actor_name || a.modifier_name || '사용자';
+                        const dept = a.department_name ? ` (${a.department_name})` : '';
+                        return (
+                          <View key={a.id} style={styles.logCard}>
+                            <View style={styles.logTop}>
+                              <View style={styles.logBadges}>
+                                <Text style={styles.auditAction}>{getAuditCategoryLabel(a.category)}</Text>
+                                <Text style={styles.logDevice}>
+                                  {actor}
+                                  {dept} · {a.action_type}
+                                </Text>
+                              </View>
+                              <Text style={styles.logTime}>{a.created_at}</Text>
+                            </View>
+                            <Text style={styles.logMessage}>{a.detail}</Text>
                           </View>
-                          <Text style={styles.logMessage}>{a.detail}</Text>
-                        </View>
-                      ))
+                        );
+                      })
                     )}
                   </View>
                 )}
