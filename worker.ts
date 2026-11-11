@@ -15,9 +15,22 @@ function jsonResponse(data: any, status = 200) {
       'Content-Type': 'application/json; charset=utf-8',
       'Access-Control-Allow-Origin': '*',
       'Access-Control-Allow-Methods': 'GET, POST, PUT, PATCH, DELETE, OPTIONS',
-      'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+      'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Admin-User',
     },
   });
+}
+
+// 관제 센터 관리자('권진호') 전용 접근 권한 검증
+function isAuthorizedMonitorUser(request: Request, url: URL): boolean {
+  const headerUser = request.headers.get('X-Admin-User') || '';
+  const queryUser = url.searchParams.get('userName') || '';
+  let decodedHeader = '';
+  try {
+    decodedHeader = decodeURIComponent(headerUser).trim();
+  } catch {
+    decodedHeader = headerUser.trim();
+  }
+  return decodedHeader === '권진호' || queryUser.trim() === '권진호';
 }
 
 function ok(data: any, message?: string) {
@@ -319,7 +332,7 @@ async function handleApiRequest(request: Request, env: Env, ctx?: ExecutionConte
       headers: {
         'Access-Control-Allow-Origin': '*',
         'Access-Control-Allow-Methods': 'GET, POST, PUT, PATCH, DELETE, OPTIONS',
-        'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+        'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Admin-User',
       },
     });
   }
@@ -1036,6 +1049,9 @@ async function handleApiRequest(request: Request, env: Env, ctx?: ExecutionConte
       }
 
       if (method === 'GET') {
+        if (!isAuthorizedMonitorUser(request, url)) {
+          return err("관제 센터 접근 권한이 없습니다. ('권진호' 계정 전용)", 403);
+        }
         const limit = Math.min(Number(url.searchParams.get('limit') || 50), 200);
         const { results } = await env.DB.prepare(`
           SELECT * FROM error_logs ORDER BY id DESC LIMIT ?
@@ -1044,6 +1060,9 @@ async function handleApiRequest(request: Request, env: Env, ctx?: ExecutionConte
       }
 
       if (method === 'DELETE') {
+        if (!isAuthorizedMonitorUser(request, url)) {
+          return err("관제 센터 접근 권한이 없습니다. ('권진호' 계정 전용)", 403);
+        }
         await env.DB.prepare('DELETE FROM error_logs').run();
         return ok({ cleared: true }, '에러 로그가 초기화되었습니다.');
       }
@@ -1082,8 +1101,11 @@ async function handleApiRequest(request: Request, env: Env, ctx?: ExecutionConte
       }
     }
 
-    // 9. 관리자 관제 대시보드 종합 데이터 (/monitor 및 앱 내 관제 모달용)
+    // 9. 관리자 관제 대시보드 종합 데이터 (/monitor 및 앱 내 관제 모달용 - 권진호 전용)
     if (method === 'GET' && path === '/api/v1/monitor/summary') {
+      if (!isAuthorizedMonitorUser(request, url)) {
+        return err("관제 센터 접근 권한이 없습니다. ('권진호' 계정 전용)", 403);
+      }
       const dbStart = Date.now();
       const [schedRow, prayerRow, errRow, perfAgg, perfByDeviceRes, errorByLevelRes, auditByCatRes, errList, perfList, auditList]: any[] = await Promise.all([
         env.DB.prepare('SELECT COUNT(*) as cnt FROM schedules').first(),

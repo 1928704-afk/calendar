@@ -46,6 +46,7 @@ export const Header: React.FC<HeaderProps> = ({
   onLogout,
 }) => {
   const isLoggedIn = !!userSession;
+  const isMonitorAdmin = isLoggedIn && userSession?.userName?.trim() === '권진호';
   const userDeptId = userSession?.departmentId || 1;
   const userDeptName = userSession?.departmentName || '소속 부서';
 
@@ -84,8 +85,8 @@ export const Header: React.FC<HeaderProps> = ({
         </View>
 
         <View style={styles.rightActionGroup}>
-          {/* 실시간 관제 센터 버튼 */}
-          {onOpenMonitor && (
+          {/* 실시간 관제 센터 버튼 ('권진호' 관리자 전용) */}
+          {isMonitorAdmin && onOpenMonitor && (
             <TouchableOpacity
               style={styles.monitorButton}
               onPress={onOpenMonitor}

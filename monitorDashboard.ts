@@ -212,10 +212,38 @@ export function renderMonitorDashboardHtml(): string {
       70% { box-shadow: 0 0 0 8px rgba(16,185,129,0); }
       100% { box-shadow: 0 0 0 0 rgba(16,185,129,0); }
     }
+    .auth-gate {
+      position: fixed; inset: 0; background: #0B1120; display: flex;
+      align-items: center; justify-content: center; padding: 20px; z-index: 9999;
+    }
+    .auth-card {
+      background: #111827; border: 1px solid #1F2937; border-radius: 16px;
+      padding: 28px; width: 100%; max-width: 380px; text-align: center;
+    }
+    .auth-card h2 { font-size: 18px; font-weight: 800; margin-bottom: 8px; }
+    .auth-card p { font-size: 13px; color: var(--muted); margin-bottom: 18px; }
+    .auth-card input {
+      width: 100%; padding: 11px 14px; border-radius: 10px; border: 1px solid #374151;
+      background: #0F172A; color: #fff; font-size: 14px; margin-bottom: 12px; outline: none;
+    }
+    .auth-err { color: #F87171; font-size: 12px; margin-bottom: 10px; min-height: 18px; }
   </style>
 </head>
 <body>
-  <div class="container">
+  <!-- 관리자 본인 확인 잠금 화면 ('권진호' 전용) -->
+  <div id="authGate" class="auth-gate" style="display:none;">
+    <div class="auth-card">
+      <div style="font-size:32px;margin-bottom:10px;">🔐</div>
+      <h2>관제 센터 접근 제한</h2>
+      <p>이 페이지는 관리자(<strong>권진호</strong>) 전용입니다.<br/>본인 이름을 입력해 주세요.</p>
+      <input id="adminNameInput" type="text" placeholder="이름을 입력하세요" onkeydown="if(event.key==='Enter') verifyAdmin()" />
+      <div id="authErrMsg" class="auth-err"></div>
+      <button class="primary" style="width:100%;justify-content:center;padding:11px;" onclick="verifyAdmin()">관제 센터 입장</button>
+      <a href="/" class="btn" style="width:100%;justify-content:center;margin-top:10px;">📅 캘린더 홈으로 돌아가기</a>
+    </div>
+  </div>
+
+  <div class="container" id="mainContainer" style="display:none;">
     <header>
       <div class="title-group">
         <h1><span class="pulse" id="statusDot"></span> 전도 캘린더 통합 관제 센터</h1>
@@ -468,11 +496,66 @@ export function renderMonitorDashboardHtml(): string {
       errWrap.innerHTML = html;
     }
 
-    async function loadMonitorData() {
+    let verifiedAdminName = '';
+
+    function getStoredUserName() {
       try {
-        const res = await fetch('/api/v1/monitor/summary');
+        const raw = localStorage.getItem('CALENDAR_USER_SESSION');
+        if (raw) {
+          const parsed = JSON.parse(raw);
+          if (parsed && parsed.userName) return String(parsed.userName).trim();
+        }
+      } catch {}
+      try {
+        const savedAdmin = sessionStorage.getItem('MONITOR_ADMIN_USER');
+        if (savedAdmin) return savedAdmin.trim();
+      } catch {}
+      return '';
+    }
+
+    function checkAuthAndBoot() {
+      const name = getStoredUserName();
+      if (name === '권진호') {
+        verifiedAdminName = '권진호';
+        document.getElementById('authGate').style.display = 'none';
+        document.getElementById('mainContainer').style.display = 'block';
+        loadMonitorData();
+      } else {
+        document.getElementById('authGate').style.display = 'flex';
+        document.getElementById('mainContainer').style.display = 'none';
+      }
+    }
+
+    function verifyAdmin() {
+      const input = (document.getElementById('adminNameInput').value || '').trim();
+      const errEl = document.getElementById('authErrMsg');
+      if (input !== '권진호') {
+        errEl.textContent = "접근 권한이 없습니다. ('권진호' 관리자 전용)";
+        return;
+      }
+      errEl.textContent = '';
+      verifiedAdminName = '권진호';
+      try { sessionStorage.setItem('MONITOR_ADMIN_USER', '권진호'); } catch {}
+      document.getElementById('authGate').style.display = 'none';
+      document.getElementById('mainContainer').style.display = 'block';
+      loadMonitorData();
+    }
+
+    async function loadMonitorData() {
+      if (verifiedAdminName !== '권진호') return;
+      try {
+        const res = await fetch('/api/v1/monitor/summary', {
+          headers: { 'X-Admin-User': encodeURIComponent(verifiedAdminName) }
+        });
         const json = await res.json();
-        if (!json.success) throw new Error(json.message);
+        if (res.status === 403 || !json.success) {
+          if (res.status === 403) {
+            verifiedAdminName = '';
+            document.getElementById('authGate').style.display = 'flex';
+            document.getElementById('mainContainer').style.display = 'none';
+          }
+          throw new Error(json.message);
+        }
         const d = json.data;
         currentData = d;
 
@@ -579,7 +662,7 @@ export function renderMonitorDashboardHtml(): string {
           source: 'MONITOR_TEST',
           level: 'warn',
           message: '관제 센터 테스트 진단 로그 (모니터링 & 웹훅 정상 동작 확인)',
-          userName: '관리자',
+          userName: '권진호',
           extra: { test: true }
         })
       });
@@ -588,7 +671,10 @@ export function renderMonitorDashboardHtml(): string {
 
     async function clearErrorLogs() {
       if (!confirm('저장된 에러 로그를 모두 초기화할까요?')) return;
-      await fetch('/api/v1/logs/error', { method: 'DELETE' });
+      await fetch('/api/v1/logs/error', {
+        method: 'DELETE',
+        headers: { 'X-Admin-User': encodeURIComponent(verifiedAdminName) }
+      });
       await loadMonitorData();
     }
 
@@ -597,9 +683,9 @@ export function renderMonitorDashboardHtml(): string {
       document.getElementById('autoBtn').textContent = autoRefresh ? '자동 갱신: ON (30초)' : '자동 갱신: OFF';
     }
 
-    loadMonitorData();
+    checkAuthAndBoot();
     timer = setInterval(() => {
-      if (autoRefresh) loadMonitorData();
+      if (autoRefresh && verifiedAdminName === '권진호') loadMonitorData();
     }, 30000);
   </script>
 </body>

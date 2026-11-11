@@ -43,7 +43,7 @@ export const MonitorModal: React.FC<MonitorModalProps> = ({
     try {
       setLoading(true);
       setErrorMsg('');
-      const res = await api.getMonitorSummary();
+      const res = await api.getMonitorSummary(userName);
       setData(res);
     } catch (e: any) {
       setErrorMsg(e?.message || '모니터링 데이터를 불러올 수 없습니다.');
@@ -73,7 +73,7 @@ export const MonitorModal: React.FC<MonitorModalProps> = ({
   const handleClearErrors = async () => {
     try {
       setActionBusy(true);
-      await api.clearMonitorErrors();
+      await api.clearMonitorErrors(userName);
       await loadSummary();
     } catch (e) {
       // ignore

@@ -597,7 +597,11 @@ function AppContent() {
             onToggleViewMode={setViewMode}
             onSelectDepartment={handleSelectDepartment}
             onOpenNotification={() => setNotificationModalVisible(true)}
-            onOpenMonitor={() => setMonitorModalVisible(true)}
+            onOpenMonitor={() => {
+              if (userSession?.userName?.trim() === '권진호') {
+                setMonitorModalVisible(true);
+              }
+            }}
             onOpenLogin={() => setLoginModalVisible(true)}
             onLogout={handleLogout}
           />
@@ -756,12 +760,14 @@ function AppContent() {
         onMarkAllAsRead={handleMarkAllAsRead}
       />
 
-      {/* 실시간 서비스 통합 관제 모달 */}
-      <MonitorModal
-        visible={monitorModalVisible}
-        userName={userSession?.userName}
-        onClose={() => setMonitorModalVisible(false)}
-      />
+      {/* 실시간 서비스 통합 관제 모달 ('권진호' 관리자 전용) */}
+      {userSession?.userName?.trim() === '권진호' && (
+        <MonitorModal
+          visible={monitorModalVisible}
+          userName={userSession?.userName}
+          onClose={() => setMonitorModalVisible(false)}
+        />
+      )}
     </SafeAreaView>
   );
 }

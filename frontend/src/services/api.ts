@@ -237,9 +237,13 @@ export const api = {
     });
   },
 
-  // 통합 관제 대시보드 데이터 조회
-  getMonitorSummary: (): Promise<any> => {
-    return request<any>('/monitor/summary');
+  // 통합 관제 대시보드 데이터 조회 (권진호 전용)
+  getMonitorSummary: (userName?: string): Promise<any> => {
+    return request<any>('/monitor/summary', {
+      headers: {
+        'X-Admin-User': encodeURIComponent(userName || ''),
+      },
+    });
   },
 
   // 관제 테스트 진단 로그 발송
@@ -256,10 +260,13 @@ export const api = {
     });
   },
 
-  // 에러 로그 초기화
-  clearMonitorErrors: (): Promise<any> => {
+  // 에러 로그 초기화 (권진호 전용)
+  clearMonitorErrors: (userName?: string): Promise<any> => {
     return request<any>('/logs/error', {
       method: 'DELETE',
+      headers: {
+        'X-Admin-User': encodeURIComponent(userName || ''),
+      },
     });
   },
 };
