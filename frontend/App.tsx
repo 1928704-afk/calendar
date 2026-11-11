@@ -12,6 +12,7 @@ import {
 import { BottomTabBar } from './src/components/BottomTabBar';
 import { CalendarView } from './src/components/CalendarView';
 import { DayDetailModal } from './src/components/DayDetailModal';
+import { ErrorBoundary } from './src/components/ErrorBoundary';
 import { Header } from './src/components/Header';
 import { BellIcon } from './src/components/icons';
 import { LoginModal } from './src/components/LoginModal';
@@ -23,6 +24,7 @@ import { TimelineView } from './src/components/TimelineView';
 import { COLORS } from './src/constants/theme';
 import { PRAYER_TARGETS } from './src/data/prayerData';
 import { api } from './src/services/api';
+import { initMonitoring, setMonitoringUser } from './src/services/monitoring';
 import { getKSTDate } from './src/utils/dateUtils';
 import {
   Department,
@@ -76,7 +78,10 @@ const DEFAULT_DEPARTMENTS: Department[] = [
   { id: 3, name: '이레부', sortOrder: 3 },
 ];
 
-export default function App() {
+// 전역 버그/에러 모니터링 초기화 (Sentry + Cloudflare 통합)
+initMonitoring();
+
+function AppContent() {
   // 컴포넌트 마운트 전 로컬 세션 동기 복원 (새로고침 시 로그인 풀림 방지)
   const initialSession = loadSessionFromStorage();
 
@@ -339,6 +344,7 @@ export default function App() {
     };
     setUserSession(session);
     saveSessionToStorage(session);
+    setMonitoringUser(res.userName, res.departmentName);
     setCurrentDeptId(res.departmentId);
     setLoginModalVisible(false);
   };
@@ -866,3 +872,11 @@ const styles = StyleSheet.create({
     paddingVertical: 4,
   },
 });
+
+export default function App() {
+  return (
+    <ErrorBoundary>
+      <AppContent />
+    </ErrorBoundary>
+  );
+}

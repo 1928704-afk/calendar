@@ -1,4 +1,5 @@
 import { ApiResponse, Comment, Department, LoginResponse, MonthlyTimelineData, NotificationItem, PrayerTargetCreateRequest, PrayerTargetItem, Schedule, TimelineData, UserSession } from '../types';
+import { captureApiIssue } from './monitoring';
 
 const getApiBaseUrl = () => {
   if (process.env.EXPO_PUBLIC_API_URL) {
@@ -18,21 +19,41 @@ const getApiBaseUrl = () => {
 const API_BASE_URL = getApiBaseUrl();
 
 async function request<T>(endpoint: string, options: RequestInit = {}): Promise<T> {
+  const startTime = Date.now();
   const headers = {
     'Content-Type': 'application/json',
     ...(options.headers || {}),
   };
 
-  const response = await fetch(`${API_BASE_URL}${endpoint}`, {
-    ...options,
-    headers,
-  });
+  try {
+    const response = await fetch(`${API_BASE_URL}${endpoint}`, {
+      ...options,
+      headers,
+    });
 
-  const json: ApiResponse<T> = await response.json();
-  if (!json.success) {
-    throw new Error(json.message || '요청 처리 중 오류가 발생했습니다.');
+    const durationMs = Date.now() - startTime;
+    const json: ApiResponse<T> = await response.json();
+
+    if (!response.ok || !json.success) {
+      const errMsg = json.message || '요청 처리 중 오류가 발생했습니다.';
+      captureApiIssue(endpoint, response.status, errMsg, durationMs);
+      throw new Error(errMsg);
+    }
+
+    // 2초 이상 API 응답 지연 시 성능 저하 자동 감지 리포팅
+    if (durationMs >= 2000) {
+      captureApiIssue(endpoint, response.status, 'Slow API Response', durationMs);
+    }
+
+    return json.data;
+  } catch (error: any) {
+    const durationMs = Date.now() - startTime;
+    // 이미 captureApiIssue가 처리되지 않은 네트워크 단절/JSON 파싱 에러 포착
+    if (error?.name === 'TypeError' || error?.name === 'SyntaxError') {
+      captureApiIssue(endpoint, 0, error.message || '네트워크 또는 응답 파싱 오류', durationMs);
+    }
+    throw error;
   }
-  return json.data;
 }
 
 export const api = {

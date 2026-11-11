@@ -115,6 +115,20 @@ async function ensureSchema(db: D1Database) {
         created_at TEXT NOT NULL
       )
     `),
+    db.prepare(`
+      CREATE TABLE IF NOT EXISTS error_logs (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        source TEXT NOT NULL,
+        level TEXT NOT NULL,
+        message TEXT NOT NULL,
+        stack TEXT,
+        url TEXT,
+        user_agent TEXT,
+        user_name TEXT,
+        extra_json TEXT,
+        created_at TEXT NOT NULL
+      )
+    `),
   ]);
 
   await db.prepare(`
@@ -765,22 +779,146 @@ async function handleApiRequest(request: Request, env: Env): Promise<Response> {
       return ok(null, '모든 알림을 읽음 처리했습니다.');
     }
 
+    // 6. 실시간 버그/에러 모니터링 로그 수집 및 조회 (Observability)
+    if (path === '/api/v1/logs/error') {
+      if (method === 'POST') {
+        const body: any = await request.json().catch(() => ({}));
+        const nowStr = nowKST();
+        const logSource = String(body.source || 'FRONTEND').slice(0, 30);
+        const logLevel = String(body.level || 'error').slice(0, 20);
+        const logMessage = String(body.message || 'Unknown error').slice(0, 1000);
+        const logStack = body.stack ? String(body.stack).slice(0, 3000) : '';
+        const logUrl = body.url ? String(body.url).slice(0, 500) : '';
+        const logUa = body.userAgent ? String(body.userAgent).slice(0, 500) : (request.headers.get('User-Agent') || '');
+        const logUser = body.userName ? String(body.userName).slice(0, 100) : '';
+        const logExtra = body.extra ? JSON.stringify(body.extra).slice(0, 2000) : '';
+
+        // Cloudflare Observability Logs용 구조화 로그 출력
+        console.error(JSON.stringify({
+          event: 'client_error_reported',
+          source: logSource,
+          level: logLevel,
+          message: logMessage,
+          url: logUrl,
+          userName: logUser,
+          userAgent: logUa,
+          timestamp: nowStr,
+        }));
+
+        await env.DB.prepare(`
+          INSERT INTO error_logs (source, level, message, stack, url, user_agent, user_name, extra_json, created_at)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `).bind(
+          logSource,
+          logLevel,
+          logMessage,
+          logStack,
+          logUrl,
+          logUa,
+          logUser,
+          logExtra,
+          nowStr
+        ).run();
+
+        // 최근 500건만 유지하여 D1 용량 최적화
+        await env.DB.prepare(`
+          DELETE FROM error_logs WHERE id NOT IN (SELECT id FROM error_logs ORDER BY id DESC LIMIT 500)
+        `).run().catch(() => {});
+
+        return ok({ recorded: true }, '에러 로그가 기록되었습니다.');
+      }
+
+      if (method === 'GET') {
+        const limit = Math.min(Number(url.searchParams.get('limit') || 50), 200);
+        const { results } = await env.DB.prepare(`
+          SELECT * FROM error_logs ORDER BY id DESC LIMIT ?
+        `).bind(limit).all();
+        return ok(results || []);
+      }
+    }
+
     return err(`요청하신 API 경로(${method} ${path})를 찾을 수 없습니다.`, 404);
   } catch (error: any) {
-    return err(`서버 내부 오류: ${error.message || String(error)}`, 500);
+    const nowStr = nowKST();
+    const errMsg = error?.message || String(error);
+    const errStack = error?.stack || '';
+
+    // Cloudflare Observability 로그에 예외 스택 기록
+    console.error(JSON.stringify({
+      event: 'worker_api_exception',
+      method,
+      path,
+      message: errMsg,
+      stack: errStack,
+      timestamp: nowStr,
+    }));
+
+    // D1 error_logs 테이블에도 백엔드 장애 기록 시도
+    try {
+      await env.DB.prepare(`
+        INSERT INTO error_logs (source, level, message, stack, url, user_agent, user_name, extra_json, created_at)
+        VALUES ('BACKEND', 'fatal', ?, ?, ?, ?, '', '', ?)
+      `).bind(
+        errMsg.slice(0, 1000),
+        errStack.slice(0, 3000),
+        `${method} ${path}`,
+        request.headers.get('User-Agent') || '',
+        nowStr
+      ).run();
+    } catch (_) {}
+
+    return err(`서버 내부 오류: ${errMsg}`, 500);
   }
 }
 
 export default {
   async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
+    const startTime = Date.now();
     const url = new URL(request.url);
 
-    // API 요청은 백엔드 로직 처리
-    if (url.pathname.startsWith('/api/v1')) {
-      return handleApiRequest(request, env);
-    }
+    try {
+      let response: Response;
+      // API 요청은 백엔드 로직 처리
+      if (url.pathname.startsWith('/api/v1')) {
+        response = await handleApiRequest(request, env);
+        const durationMs = Date.now() - startTime;
 
-    // 그 외 웹 페이지 및 정적 파일 요청은 프론트엔드 정적 자산 서빙
-    return env.ASSETS.fetch(request);
+        // Cloudflare Observability Logs용 구조화 요청/성능 메트릭 기록
+        if (response.status >= 400 || durationMs >= 1000) {
+          console.warn(JSON.stringify({
+            event: 'api_performance_or_error',
+            method: request.method,
+            path: url.pathname,
+            status: response.status,
+            durationMs,
+            timestamp: nowKST(),
+          }));
+        } else {
+          console.log(JSON.stringify({
+            event: 'api_access',
+            method: request.method,
+            path: url.pathname,
+            status: response.status,
+            durationMs,
+            timestamp: nowKST(),
+          }));
+        }
+        return response;
+      }
+
+      // 그 외 웹 페이지 및 정적 파일 요청은 프론트엔드 정적 자산 서빙
+      return await env.ASSETS.fetch(request);
+    } catch (fatalErr: any) {
+      // 최상위 Worker 크래시 감지 및 Cloudflare Observability 기록
+      console.error(JSON.stringify({
+        event: 'worker_fatal_crash',
+        method: request.method,
+        path: url.pathname,
+        message: fatalErr?.message || String(fatalErr),
+        stack: fatalErr?.stack || '',
+        timestamp: nowKST(),
+      }));
+      return err('일시적인 서버 오류가 발생했습니다.', 500);
+    }
   },
 };
