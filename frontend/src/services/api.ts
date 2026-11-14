@@ -18,42 +18,98 @@ const getApiBaseUrl = () => {
 
 const API_BASE_URL = getApiBaseUrl();
 
+// 일시적 네트워크 오류 시 딜레이 함수
+const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+// 네트워크 일시 단절 또는 iOS Safari Load failed 에러 판별
+function isNetworkError(error: any): boolean {
+  if (!error) return false;
+  const msg = String(error.message || '').toLowerCase();
+  const name = String(error.name || '');
+  return (
+    name === 'TypeError' ||
+    msg.includes('load failed') ||
+    msg.includes('failed to fetch') ||
+    msg.includes('networkerror') ||
+    msg.includes('network request failed')
+  );
+}
+
 async function request<T>(endpoint: string, options: RequestInit = {}): Promise<T> {
-  const startTime = Date.now();
+  const method = (options.method || 'GET').toUpperCase();
+  const isIdempotent = method === 'GET' || method === 'HEAD';
+  const maxRetries = isIdempotent ? 2 : 0; // 안전한 GET 요청은 최대 2회 자동 재시도
+  const retryDelays = [350, 800];
+
   const headers = {
     'Content-Type': 'application/json',
     ...(options.headers || {}),
   };
 
-  try {
-    const response = await fetch(`${API_BASE_URL}${endpoint}`, {
-      ...options,
-      headers,
-    });
+  let attempt = 0;
+  const overallStartTime = Date.now();
 
-    const durationMs = Date.now() - startTime;
-    const json: ApiResponse<T> = await response.json();
+  while (attempt <= maxRetries) {
+    const attemptStartTime = Date.now();
+    try {
+      const response = await fetch(`${API_BASE_URL}${endpoint}`, {
+        ...options,
+        headers,
+      });
 
-    if (!response.ok || !json.success) {
-      const errMsg = json.message || '요청 처리 중 오류가 발생했습니다.';
-      captureApiIssue(endpoint, response.status, errMsg, durationMs);
-      throw new Error(errMsg);
+      const attemptDuration = Date.now() - attemptStartTime;
+      const json: ApiResponse<T> = await response.json();
+
+      if (!response.ok || !json.success) {
+        const errMsg = json.message || '요청 처리 중 오류가 발생했습니다.';
+        // 502, 503, 504 서버 일시 오류 시 재시도 가능성 검토
+        if (isIdempotent && [502, 503, 504].includes(response.status) && attempt < maxRetries) {
+          attempt++;
+          await delay(retryDelays[attempt - 1] || 500);
+          continue;
+        }
+
+        captureApiIssue(endpoint, response.status, errMsg, attemptDuration);
+        throw new Error(errMsg);
+      }
+
+      // 2초 이상 API 응답 지연 시 성능 저하 자동 감지 리포팅
+      if (attemptDuration >= 2000) {
+        captureApiIssue(endpoint, response.status, 'Slow API Response', attemptDuration);
+      }
+
+      return json.data;
+    } catch (error: any) {
+      const isNetErr = isNetworkError(error);
+      const isHidden = typeof document !== 'undefined' && document.visibilityState === 'hidden';
+
+      // 일시적 네트워크 오류이고 재시도 횟수가 남아있는 경우 자동 재시도
+      if (isNetErr && attempt < maxRetries) {
+        attempt++;
+        await delay(retryDelays[attempt - 1] || 500);
+        continue;
+      }
+
+      // 최종 실패 시 처리
+      const totalDuration = Date.now() - overallStartTime;
+
+      // 화면이 꺼져 있거나 백그라운드 전환 중 브라우저가 취소한 것은 오탐 방지를 위해 관제 노이즈에서 제외
+      if (isHidden && isNetErr) {
+        console.warn(`[Network] 백그라운드 전환 중 요청 취소 (${endpoint}):`, error?.message);
+      } else if (isNetErr || error?.name === 'TypeError' || error?.name === 'SyntaxError') {
+        captureApiIssue(
+          endpoint,
+          0,
+          `${error?.message || '네트워크 오류'}${attempt > 0 ? ` (${attempt}회 재시도 실패)` : ''}`,
+          totalDuration
+        );
+      }
+
+      throw error;
     }
-
-    // 2초 이상 API 응답 지연 시 성능 저하 자동 감지 리포팅
-    if (durationMs >= 2000) {
-      captureApiIssue(endpoint, response.status, 'Slow API Response', durationMs);
-    }
-
-    return json.data;
-  } catch (error: any) {
-    const durationMs = Date.now() - startTime;
-    // 이미 captureApiIssue가 처리되지 않은 네트워크 단절/JSON 파싱 에러 포착
-    if (error?.name === 'TypeError' || error?.name === 'SyntaxError') {
-      captureApiIssue(endpoint, 0, error.message || '네트워크 또는 응답 파싱 오류', durationMs);
-    }
-    throw error;
   }
+
+  throw new Error('요청 실패');
 }
 
 export const api = {

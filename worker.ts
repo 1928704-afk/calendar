@@ -8,14 +8,16 @@ interface Env {
   ALERT_WEBHOOK_URL?: string;
 }
 
-function jsonResponse(data: any, status = 200) {
+function jsonResponse(data: any, status = 200, extraHeaders: Record<string, string> = {}) {
   return new Response(JSON.stringify(data), {
     status,
     headers: {
       'Content-Type': 'application/json; charset=utf-8',
+      'Cache-Control': 'no-store, no-cache, must-revalidate',
       'Access-Control-Allow-Origin': '*',
       'Access-Control-Allow-Methods': 'GET, POST, PUT, PATCH, DELETE, OPTIONS',
       'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Admin-User',
+      ...extraHeaders,
     },
   });
 }
@@ -168,6 +170,10 @@ async function ensureSchema(db: D1Database) {
         created_at TEXT NOT NULL
       )
     `),
+    db.prepare('CREATE INDEX IF NOT EXISTS idx_notifications_recipient ON notifications(recipient_name, is_read, id DESC)'),
+    db.prepare('CREATE INDEX IF NOT EXISTS idx_notifications_unread ON notifications(recipient_name, is_read)'),
+    db.prepare('CREATE INDEX IF NOT EXISTS idx_error_logs_created ON error_logs(id DESC)'),
+    db.prepare('CREATE INDEX IF NOT EXISTS idx_activity_logs_created ON activity_logs(id DESC)'),
   ]);
 
   // 기존 일정 히스토리를 통합 activity_logs에 초기 1회 마이그레이션

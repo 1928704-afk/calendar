@@ -280,18 +280,49 @@ function AppContent() {
     }
   }, []);
 
-  // 12초 주기 백그라운드 알림 폴링
+  // 화면 활성화(Visibility) 인식 스마트 알림 폴링 (iOS Safari 백그라운드 소켓 끊김 원천 방지)
   useEffect(() => {
-    if (userSession?.userName) {
-      loadNotifications(false);
-      const interval = setInterval(() => {
-        loadNotifications(true);
-      }, 12000);
-      return () => clearInterval(interval);
-    } else {
+    if (!userSession?.userName) {
       setNotifications([]);
       setUnreadCount(0);
+      return;
     }
+
+    // 1. 초기 1회 로드
+    loadNotifications(false);
+
+    // 2. 화면이 활성화(visible) 상태일 때만 15초 주기로 폴링
+    const interval = setInterval(() => {
+      if (typeof document !== 'undefined' && document.visibilityState === 'hidden') {
+        // 화면이 꺼져있거나 백그라운드 전환 중이면 네트워크 요청 생략
+        return;
+      }
+      loadNotifications(true);
+    }, 15000);
+
+    // 3. 백그라운드에서 다시 앱 화면으로 복귀했을 때 즉시 최신 알림 동기화
+    const handleVisibilityOrFocus = () => {
+      if (typeof document !== 'undefined' && document.visibilityState === 'visible') {
+        loadNotifications(false);
+      }
+    };
+
+    if (typeof document !== 'undefined') {
+      document.addEventListener('visibilitychange', handleVisibilityOrFocus);
+    }
+    if (typeof window !== 'undefined') {
+      window.addEventListener('focus', handleVisibilityOrFocus);
+    }
+
+    return () => {
+      clearInterval(interval);
+      if (typeof document !== 'undefined') {
+        document.removeEventListener('visibilitychange', handleVisibilityOrFocus);
+      }
+      if (typeof window !== 'undefined') {
+        window.removeEventListener('focus', handleVisibilityOrFocus);
+      }
+    };
   }, [userSession?.userName, loadNotifications]);
 
   // 알림 클릭 -> 읽음 처리 및 해당 일정 열기

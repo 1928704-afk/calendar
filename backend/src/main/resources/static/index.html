@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="en">
+<html lang="ko">
   <head>
     <meta charset="utf-8" />
     <meta httpEquiv="X-UA-Compatible" content="IE=edge" />
@@ -11,6 +11,9 @@
     <link rel="manifest" href="/manifest.json" />
     <link rel="apple-touch-icon" href="/icon.png" />
     <title>전도 캘린더 & 기도명단</title>
+    <!-- Pretendard Variable 고품질 한글 웹폰트 (아이폰/안드로이드 일관된 미려한 글꼴) -->
+    <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin />
+    <link rel="stylesheet" as="style" crossorigin href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable.min.css" />
     <link rel="stylesheet" as="style" crossorigin href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css" />
     <script>
       // 서비스 워커 등록
@@ -36,14 +39,52 @@
       });
     </script>
     <style id="expo-reset">
-      /* These styles make the body full-height */
+      /* 1. 안드로이드 시스템 글자 크기 임의 확대 방지 및 기본 폰트 스택 정의 */
       html,
       body {
         height: 100%;
-        font-family: "Pretendard", -apple-system, BlinkMacSystemFont, system-ui, Roboto, "Helvetica Neue", "Segoe UI", "Apple SD Gothic Neo", "Noto Sans KR", "Malgun Gothic", sans-serif;
-        -webkit-text-size-adjust: 100%;
+        background-color: #0F172A;
+        -webkit-text-size-adjust: 100% !important;
+        text-size-adjust: 100% !important;
+        -webkit-font-smoothing: antialiased !important;
+        -moz-osx-font-smoothing: grayscale !important;
+        text-rendering: optimizeLegibility !important;
+        font-family: "Pretendard Variable", "Pretendard", -apple-system, BlinkMacSystemFont, system-ui, Roboto, "Helvetica Neue", "Segoe UI", "Apple SD Gothic Neo", "Noto Sans KR", "Malgun Gothic", sans-serif !important;
       }
-      /* 모바일에서 텍스트 입력 시 iOS Safari 강제 줌 방지 (16px 기준) */
+
+      /* 2. React Native Web의 모든 텍스트 컴포넌트([dir="auto"], [class*="r-"], div, span 등)에 Pretendard 강제 주입 */
+      *,
+      *::before,
+      *::after,
+      #root,
+      div,
+      span,
+      p,
+      h1,
+      h2,
+      h3,
+      h4,
+      h5,
+      h6,
+      input,
+      textarea,
+      select,
+      button,
+      [dir="auto"],
+      [dir="ltr"],
+      [dir="rtl"],
+      [class*="css-text-"],
+      [class*="r-fontFamily-"] {
+        font-family: "Pretendard Variable", "Pretendard", -apple-system, BlinkMacSystemFont, system-ui, Roboto, "Helvetica Neue", "Segoe UI", "Apple SD Gothic Neo", "Noto Sans KR", "Malgun Gothic", sans-serif !important;
+        -webkit-text-size-adjust: 100% !important;
+        text-size-adjust: 100% !important;
+        letter-spacing: -0.015em;
+        word-break: keep-all; /* 안드로이드 한글 단어 중간 끊김 방지 */
+        overflow-wrap: break-word;
+        box-sizing: border-box;
+      }
+
+      /* 3. 모바일에서 텍스트 입력 시 iOS Safari 강제 줌 방지 (16px 기준) */
       @media screen and (max-width: 768px) {
         input,
         textarea,
@@ -51,19 +92,20 @@
           font-size: 16px !important;
         }
       }
-      /* These styles disable body scrolling if you are using <ScrollView> */
+
+      /* 4. 스크롤 및 레이아웃 유지 */
       body {
         overflow: hidden;
       }
-      /* These styles make the root element full-height */
       #root {
         display: flex;
         height: 100%;
         flex: 1;
-        font-family: "Pretendard", -apple-system, BlinkMacSystemFont, system-ui, Roboto, "Helvetica Neue", "Segoe UI", "Apple SD Gothic Neo", "Noto Sans KR", "Malgun Gothic", sans-serif;
       }
+
+      /* 5. 안드로이드 터치 하이라이트 잔상 제거 */
       * {
-        box-sizing: border-box;
+        -webkit-tap-highlight-color: transparent;
       }
     </style>
   <meta name="theme-color" content="#0F172A">
@@ -74,6 +116,6 @@
     <noscript> You need to enable JavaScript to run this app. </noscript>
     <!-- The root element for your Expo app. -->
     <div id="root"></div>
-  <script src="/_expo/static/js/web/index-68b03025bbe405b0527454edb6181e6e.js" defer></script>
+  <script src="/_expo/static/js/web/index-ae2f4a9da2a9297a290c205a97690d69.js" defer></script>
 </body>
 </html>
